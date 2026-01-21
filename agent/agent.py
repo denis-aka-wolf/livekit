@@ -6,7 +6,8 @@ from dotenv import load_dotenv
 from livekit import api
 from livekit.agents import JobContext, WorkerOptions, cli, JobRequest
 
-load_dotenv()
+# Загружаем переменные из .env файла в корне проекта
+load_dotenv("../.env")
 
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger("elaina-agent")
