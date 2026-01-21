@@ -1,9 +1,11 @@
+/venv
 /sip/venv
 /sip/python-sdks
 /agent-playground/node_modules
 /redis_data
 /agent/venv
 /agent/.env
+/agent_env
 
 /agents-playground/.env
 

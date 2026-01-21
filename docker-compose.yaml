@@ -42,29 +42,7 @@ services:
         logging:
           level: info
           
-  my-agent:
-    image: python:3.12-slim
-    volumes:
-      - ./agent:/app
-    working_dir: /app
-    # network_mode: host → используем ту же сеть что и остальные сервисы
-    restart: always
-    env_file:
-      - .env
-    environment:
-      LIVEKIT_URL: "ws://localhost:7880"  # Используем localhost для подключения
-      LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}"
-      LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}"
-      SIP_OUTBOUND_TRUNK_TEST_ID: "${SIP_OUTBOUND_TRUNK_TEST_ID:-YOUR_TRUNK_ID_HERE}"
-    command: >
-      sh -c "
-        python -m venv /opt/venv && \
-        /opt/venv/bin/pip install --upgrade pip && \
-        /opt/venv/bin/pip install livekit-agents livekit-api python-dotenv && \
-        /opt/venv/bin/python -u agent.py dev
-      "
-    depends_on:
-    - livekit
+  
 
 
 volumes:
