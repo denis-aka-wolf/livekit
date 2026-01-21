@@ -52,7 +52,7 @@ services:
     env_file:
       - .env
     environment:
-      LIVEKIT_URL: "ws://158.160.2.82:7880"  # Используем внешний IP адрес для подключения
+      LIVEKIT_URL: "ws://localhost:7880"  # Используем localhost для подключения
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}"
       LIVEKIT_API_SECRET: "${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}"
       SIP_OUTBOUND_TRUNK_TEST_ID: "${SIP_OUTBOUND_TRUNK_TEST_ID:-YOUR_TRUNK_ID_HERE}"
