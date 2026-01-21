@@ -241,10 +241,80 @@ sudo ln -s /etc/nginx/sites-available/elaina.adrian-vpn.host /etc/nginx/sites-en
 sudo nginx -t # Проверить синтаксис
 sudo systemctl restart nginx
 ```
-
 ## **Получение и автоматическое обновление сертификатов с Certbot**:
 
 **Установите Certbot**:
 ```shell
 sudo certbot --nginx
 ```
+
+## Использование переменных окружения в Docker Compose
+
+### Общая информация
+
+В этом проекте используется система управления переменными окружения через файл `.env`. Этот подход позволяет легко управлять конфигурацией приложения без изменения кода.
+
+### Файл .env
+
+Файл `.env` содержит переменные окружения, которые будут использоваться в Docker Compose. Пример содержания:
+
+```
+# LiveKit API Credentials
+LIVEKIT_API_KEY=YOUR_API_KEY_HERE
+LIVEKIT_API_SECRET=YOUR_API_SECRET_HERE
+LIVEKIT_KEYS="YOUR_API_KEY_HERE: YOUR_API_SECRET_HERE"
+
+# SIP Trunk Configuration
+SIP_OUTBOUND_TRUNK_TEST_ID=YOUR_TRUNK_ID_HERE
+
+# LiveKit Server URL
+LIVEKIT_URL=ws://localhost:7880
+```
+
+### Запуск контейнеров с переменными окружения
+
+#### Подготовка
+
+1. Создайте файл `.env` в корне проекта, основываясь на примере или на файле `.env.example`
+2. Установите значения переменных в соответствии с вашей средой
+
+#### Запуск
+
+Для запуска контейнеров с использованием переменных окружения выполните команду:
+
+```bash
+docker-compose up
+```
+
+или
+
+```bash
+docker compose up
+```
+
+(в зависимости от вашей версии Docker Compose)
+
+#### Запуск в фоновом режиме
+
+Для запуска контейнеров в фоновом режиме используйте флаг `-d`:
+
+```bash
+docker-compose up -d
+```
+
+### Переменные по умолчанию
+
+В файле `docker-compose.yaml` используются переменные с умолчаниями в формате `${VARIABLE_NAME:-default_value}`. Это означает, что если переменная не установлена в файле `.env`, будет использовано значение по умолчанию.
+
+Например:
+- `${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}` - если переменная `LIVEKIT_API_KEY` не установлена, будет использовано значение `YOUR_API_KEY_HERE`
+
+### Проверка переменных окружения
+
+Для проверки установленных переменных окружения в работающем контейнере можно использовать команду:
+
+```bash
+docker-compose exec service_name env
+```
+
+Где `service_name` - это имя сервиса (например, `livekit`, `sip`, `my-agent`).

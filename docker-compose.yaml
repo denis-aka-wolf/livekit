@@ -14,10 +14,12 @@ services:
     restart: always
     depends_on:
       - redis
+    env_file:
+      - .env
     environment:
       # Установите свои ключи в переменных окружения
       # LIVEKIT_KEYS: "your_api_key: your_api_secret"
-      LIVEKIT_KEYS: "${LIVEKIT_KEYS:-YOUR_API_KEY_HERE: YOUR_API_SECRET_HERE}"
+      LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}:${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}"
       LIVEKIT_REDIS_ADDRESS: "localhost:6379"
       LIVEKIT_DEV: "true"
 
@@ -25,6 +27,8 @@ services:
     image: livekit/sip:latest
     network_mode: host
     restart: always
+    env_file:
+      - .env
     environment:
       SIP_CONFIG_BODY: |
         api_key: '${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}'
@@ -37,7 +41,7 @@ services:
         rtp_port_range: 10000-20000
         logging:
           level: info
-
+          
   my-agent:
     image: python:3.12-slim
     volumes:
@@ -45,6 +49,8 @@ services:
     working_dir: /app
     # network_mode: host → используем ту же сеть что и остальные сервисы
     restart: always
+    env_file:
+      - .env
     environment:
       LIVEKIT_URL: "ws://localhost:7880"  # Изменено на localhost для соответствия другим сервисам
       LIVEKIT_API_KEY: "${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}"
@@ -58,7 +64,8 @@ services:
         /opt/venv/bin/python -u agent.py dev
       "
     depends_on:
-      - livekit
+    - livekit
+
 
 volumes:
   redis_data:
