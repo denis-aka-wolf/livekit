@@ -1,0 +1,17 @@
+{
+  "dispatch_rule": {
+    "name": "My direct rule",
+    "rule": {
+      "dispatch_rule_direct": {
+        "room_name": "elaina"
+      }
+    },
+    "room_config": {
+      "agents": [
+        {
+          "agent_name": "elaina"
+        }
+      ]
+    }
+  }
+}

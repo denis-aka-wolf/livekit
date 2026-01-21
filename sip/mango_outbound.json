@@ -1,0 +1,9 @@
+{
+  "trunk": {
+    "name": "mango-outbound",
+    "address": "elaina.mangosip.ru",
+    "numbers": [
+      "+73833830067"
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "trunk": {
+    "name": "mango-inbound",
+    "numbers": ["+73833830067"],
+    "allowed_addresses": ["81.88.86.55/32"]
+  }
+}
