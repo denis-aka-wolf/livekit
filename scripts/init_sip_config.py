@@ -61,6 +61,9 @@ async def setup_sip_trunks_and_rules():
     try:
         print("=== Начало инициализации SIP конфигураций ===")
         
+        # Переменная для хранения ID входящего транка
+        inbound_trunk_id = None
+        
         # Создание входящего транка
         inbound_config = load_config_from_json("/app/sip/mango_inbound.json")
         if inbound_config:
@@ -75,9 +78,15 @@ async def setup_sip_trunks_and_rules():
                         allowed_addresses=inbound_config["trunk"].get("allowed_addresses", [])
                     )
                     inbound_trunk = await sip_client.create_inbound_trunk(inbound_request)
-                    print(f"Создан входящий транк: {inbound_trunk.sip_trunk_id}")
+                    inbound_trunk_id = inbound_trunk.sip_trunk_id
+                    print(f"Создан входящий транк: {inbound_trunk_id}")
                 else:
-                    print("Входящий транк уже существует")
+                    # Если транк уже существует, получаем его ID
+                    for trunk in existing_trunks.items:
+                        if trunk.name == inbound_config["trunk"]["name"]:
+                            inbound_trunk_id = trunk.sip_trunk_id
+                            break
+                    print(f"Входящий транк уже существует: {inbound_trunk_id}")
             except Exception as e:
                 print(f"Ошибка при создании входящего транка: {e}")
         
@@ -103,56 +112,44 @@ async def setup_sip_trunks_and_rules():
         
         # Создание правил диспетчеризации
         dispatch_config = load_config_from_json("/app/sip/mango_dispatch.json")
-        if dispatch_config:
+        if dispatch_config and inbound_trunk_id:
             try:
                 existing_rules = await sip_client.list_dispatch_rule(api.ListSIPDispatchRuleRequest())
                 rule_exists = any(rule.name == dispatch_config["dispatch_rule"]["name"] for rule in existing_rules.items)
                 
                 if not rule_exists:
-                    # Найти ID транка по имени для использования в правиле
-                    trunk_id = None
-                    if "trunk_ids" in dispatch_config["dispatch_rule"]:
-                        trunk_id = dispatch_config["dispatch_rule"]["trunk_ids"][0]
-                    else:
-                        # Если ID транка не указан, ищем по имени
-                        inbound_trunks = await sip_client.list_inbound_trunk(api.ListSIPInboundTrunkRequest())
-                        for trunk in inbound_trunks.items:
-                            if trunk.name == inbound_config["trunk"]["name"]:
-                                trunk_id = trunk.sip_trunk_id
-                                break
+                    rule_logic = api.SIPDispatchRule(
+                        dispatch_rule_direct=api.SIPDispatchRuleDirect(
+                            room_name=dispatch_config["dispatch_rule"]["rule"]["dispatch_rule_direct"]["room_name"]
+                        )
+                    )
                     
-                    if trunk_id:
-                        rule_logic = api.SIPDispatchRule(
-                            dispatch_rule_direct=api.SIPDispatchRuleDirect(
-                                room_name=dispatch_config["dispatch_rule"]["rule"]["dispatch_rule_direct"]["room_name"]
-                            )
+                    room_config = None
+                    if "room_config" in dispatch_config["dispatch_rule"]:
+                        agents = []
+                        for agent in dispatch_config["dispatch_rule"]["room_config"]["agents"]:
+                            agents.append(api.RoomAgent(identity=agent["agent_name"]))
+                        
+                        room_config = api.SIPRoomConfig(
+                            agents=agents
                         )
-                        
-                        room_config = None
-                        if "room_config" in dispatch_config["dispatch_rule"]:
-                            agents = []
-                            for agent in dispatch_config["dispatch_rule"]["room_config"]["agents"]:
-                                agents.append(api.RoomAgent(identity=agent["agent_name"]))
-                            
-                            room_config = api.SIPRoomConfig(
-                                agents=agents
-                            )
-                        
-                        dispatch_request = api.CreateSIPDispatchRuleRequest(
-                            name=dispatch_config["dispatch_rule"]["name"],
-                            trunk_ids=[trunk_id],
-                            rule=rule_logic,
-                            room_config=room_config
-                        )
-                        
-                        dispatch_rule = await sip_client.create_dispatch_rule(dispatch_request)
-                        print(f"Создано правило диспетчеризации: {dispatch_rule.sip_dispatch_rule_id}")
-                    else:
-                        print("Не удалось найти ID транка для правила диспетчеризации")
+                    
+                    dispatch_request = api.CreateSIPDispatchRuleRequest(
+                        name=dispatch_config["dispatch_rule"]["name"],
+                        trunk_ids=[inbound_trunk_id],  # Используем ID созданного или найденного входящего транка
+                        rule=rule_logic,
+                        room_config=room_config
+                    )
+                    
+                    dispatch_rule = await sip_client.create_dispatch_rule(dispatch_request)
+                    print(f"Создано правило диспетчеризации: {dispatch_rule.sip_dispatch_rule_id}")
                 else:
                     print("Правило диспетчеризации уже существует")
             except Exception as e:
                 print(f"Ошибка при создании правила диспетчеризации: {e}")
+        elif not inbound_trunk_id:
+            print("Не удалось получить ID входящего транка для создания правила диспетчеризации")
+        
         
         print("=== Завершена инициализация SIP конфигураций ===")
         
