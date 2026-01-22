@@ -1,7 +1,7 @@
 {
   "dispatch_rule": {
     "name": "mango-dispatch",
-    "trunk_ids": ["ST_adef7WEhVeVD"],
+    "trunk_ids": ["ST_hoVtmgNJvVFg"],
     "rule": {
       "dispatch_rule_direct": {
         "room_name": "elaina"
