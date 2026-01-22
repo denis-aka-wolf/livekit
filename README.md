@@ -345,8 +345,109 @@ docker-compose exec service_name env
      ```
 
 **Просмотр логов с фильтрацией по времени**:
-   - Для просмотра логов за определенный период:
-     ```bash
-     sudo docker compose logs --since "2023-01-01T00:00:00" --until "2023-01-02T00:00" <container_id_or_name>
-     ```
+    - Для просмотра логов за определенный период:
+      ```bash
+      sudo docker compose logs --since "2023-01-01T00:00:00" --until "2023-01-02T00:00" <container_id_or_name>
+      ```
+
+## Восстановление SIP конфигураций после перезагрузки
+
+После перезагрузки виртуальной машины SIP-транки и правила диспетчеризации могут исчезнуть, так как они не сохраняются автоматически между перезапусками контейнеров. Для восстановления конфигураций используется скрипт инициализации.
+
+### Использование скрипта инициализации
+
+Создан скрипт `scripts/init_sip_config.py`, который автоматически восстанавливает:
+- Входящие и исходящие SIP-транки
+- Правила диспетcherизации вызовов
+
+### Запуск скрипта инициализации
+
+После запуска всех контейнеров выполните:
+
+```bash
+cd /home/denis/livekit
+source agent/venv/bin/activate  # Активировать виртуальное окружение
+python3 scripts/init_sip_config.py
+```
+
+Скрипт автоматически:
+- Подключится к LiveKit серверу
+- Создаст входящий SIP-транк из конфига `sip/mango_inbound.json`
+- Создаст исходящий SIP-транк из конфига `sip/mango_outbound.json`
+- Создаст правило диспетчеризации из конфига `sip/mango_dispatch.json`
+- Проверит, существуют ли уже такие конфигурации, чтобы избежать дубликатов
+
+### Стандартная процедура после перезагрузки
+
+1. Запустить контейнеры:
+   ```bash
+   cd /home/denis/livekit
+   docker compose up -d
+   ```
+
+2. Дождаться полной загрузки сервисов (около 30 секунд)
+
+3. Активировать виртуальное окружение и запустить скрипт инициализации:
+   ```bash
+   cd /home/denis/livekit
+   source agent/venv/bin/activate
+   python3 scripts/init_sip_config.py
+   ```
+
+4. Проверить результат:
+   ```bash
+   lk sip inbound list --url ws://158.160.2.82:7880 --api-key <your_api_key> --api-secret <your_api_secret>
+   lk sip outbound list --url ws://158.160.2.82:7880 --api-key <your_api_key> --api-secret <your_api_secret>
+   lk sip dispatch-rule list --url ws://158.160.2.82:7880 --api-key <your_api_key> --api-secret <your_api_secret>
+   ```
+
+### Настройка конфигурационных файлов
+
+Скрипт использует следующие конфигурационные файлы:
+
+- `sip/mango_inbound.json` - для настройки входящего транка
+- `sip/mango_outbound.json` - для настройки исходящего транка
+- `sip/mango_dispatch.json` - для настройки правила диспетчеризации
+
+Вы можете изменить эти файлы перед запуском скрипта, чтобы настроить свои собственные транки и правила.
+
+### Автоматический запуск при старте системы (опционально)
+
+Для автоматического восстановления конфигураций после перезагрузки можно создать systemd-сервис:
+
+Создайте файл `/etc/systemd/system/livekit-init.service`:
+
+```ini
+[Unit]
+Description=LiveKit SIP Configuration Initialization
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker compose -f /home/denis/livekit/docker-compose.yaml up -d
+ExecStartPost=/bin/sleep 30
+ExecStartPost=/usr/bin/bash -c 'cd /home/denis/livekit && source agent/venv/bin/activate && python3 scripts/init_sip_config.py'
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Затем включите сервис:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable livekit-init.service
+```
+
+### Проверка восстановленных конфигураций
+
+Для проверки созданных транков и правил используйте команды:
+
+```bash
+lk sip inbound list --url ws://158.160.2.82:7880 --api-key <your_api_key> --api-secret <your_api_secret>
+lk sip outbound list --url ws://158.160.2.82:7880 --api-key <your_api_key> --api-secret <your_api_secret>
+lk sip dispatch-rule list --url ws://158.160.2.82:7880 --api-key <your_api_key> --api-secret <your_api_secret>
+```
 

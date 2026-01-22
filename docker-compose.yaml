@@ -22,11 +22,15 @@ services:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}: ${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}"
       LIVEKIT_REDIS_ADDRESS: "localhost:6379"
       LIVEKIT_DEV: "true"
+    volumes:
+      - livekit_data:/var/lib/livekit
 
   sip:
     image: livekit/sip:latest
     network_mode: host
     restart: always
+    depends_on:
+      - livekit
     env_file:
       - .env
     environment:
