@@ -366,7 +366,7 @@ docker-compose exec service_name env
 
 ```bash
 cd /home/denis/livekit
-source agent/venv/bin/activate  # Активировать виртуальное окружение
+source ./venv/bin/activate  # Активировать виртуальное окружение
 python3 scripts/init_sip_config.py
 ```
 
