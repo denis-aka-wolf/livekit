@@ -1,31 +1,47 @@
 import asyncio
 import logging
+import os
 from itertools import chain
-
 from dotenv import load_dotenv
 from google.protobuf.json_format import MessageToDict
 
-from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
+# Важно: используем AgentSession для работы с Realtime/LLM
+from livekit.agents import Agent, AgentServer, JobContext, cli
 from livekit.plugins import openai
 
 logger = logging.getLogger("minimal-worker")
 logger.setLevel(logging.INFO)
 
-load_dotenv("../.env")  # используем основной .env файл
+load_dotenv("../.env")
 
 server = AgentServer()
 
 @server.rtc_session()
 async def entrypoint(ctx: JobContext):
-    session = AgentSession(llm=openai.realtime.RealtimeModel())
-    await session.start(Agent(instructions="You are a helpful assistant"), room=ctx.room)
+    # Фильтр комнаты
+    if ctx.room.name != "my_room":
+        logger.info(f"Skipping room {ctx.room.name}")
+        return 
 
-    logger.info(f"connected to the room {ctx.room.name}")
+    # Правильная настройка LLM для локального сервера (llama.cpp)
+    # Используем OpenAI плагин, так как llama.cpp имитирует его API
+    llm = openai.LLM(
+        base_url=os.getenv("LLAMA_BASE_URL", "http://localhost:11434/v1"),
+        api_key="fake-key", # локальные серверы обычно не требуют ключ
+        model=os.getenv("LLAMA_MODEL", "qwen3-4b")
+    )
+    
+    agent = Agent(
+        llm=llm, 
+        instructions="You are a helpful assistant"
+    )
+    
+    # Запускаем агента в комнате
+    await agent.start(ctx.room)
+    logger.info(f"Connected to room: {ctx.room.name}")
 
-    # log the session stats every 5 minutes
     while True:
         rtc_stats = await ctx.room.get_session_stats()
-
         all_stats = chain(
             (("PUBLISHER", stats) for stats in rtc_stats.publisher_stats),
             (("SUBSCRIBER", stats) for stats in rtc_stats.subscriber_stats),
@@ -33,17 +49,12 @@ async def entrypoint(ctx: JobContext):
 
         for source, stats in all_stats:
             stats_kind = stats.WhichOneof("stats")
-
-            # stats_kind can be one of the following:
-            # candidate_pair, certificate, codec, data_channel, inbound_rtp, local_candidate,
-            # media_playout, media_source, outbound_rtp, peer_connection, remote_candidate,
-            # remote_inbound_rtp, remote_outbound_rtp, stats, stream, track, transport
-
             logger.info(
-                f"RtcStats - {stats_kind} - {source}", extra={"stats": MessageToDict(stats)}
+                f"RtcStats - {stats_kind} - {source}", 
+                extra={"stats": MessageToDict(stats)}
             )
-
-        await asyncio.sleep(5 * 60)
+        await asyncio.sleep(60)
 
 if __name__ == "__main__":
+    # cli.run_app сам подтянет LIVEKIT_API_KEY и SECRET из среды
     cli.run_app(server)

@@ -3,6 +3,7 @@
 /sip/python-sdks
 /agent-playground/node_modules
 /redis_data
+/livekit_data
 /agent/venv
 /agent/.env
 /agent_env
@@ -12,6 +13,8 @@
 
 /sip/sip.yaml
 /livekitdocker/livekit.yaml
+
+/inference
 
 # dependencies
 /node_modules

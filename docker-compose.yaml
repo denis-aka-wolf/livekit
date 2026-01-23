@@ -3,14 +3,14 @@ version: '3.8'
 services:
   redis:
     image: redis:7-alpine
+    network_mode: host
     restart: always
     volumes:
       - redis_data:/data
-    networks:
-      - agent_network
 
   livekit:
     image: livekit/livekit-server:latest
+    network_mode: host
     restart: always
     depends_on:
       - redis
@@ -20,45 +20,33 @@ services:
       # Установите свои ключи в переменных окружения
       # LIVEKIT_KEYS: "your_api_key: your_api_secret"
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}: ${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}"
-      LIVEKIT_REDIS_ADDRESS: "redis:6379"
+      LIVEKIT_REDIS_ADDRESS: "localhost:6379"
       LIVEKIT_DEV: "true"
     volumes:
       - livekit_data:/var/lib/livekit
-    networks:
-      - agent_network
-    ports:
-      - "7880:7880"
-      - "7881:7881"
-      - "7882:7882/udp"
 
   sip:
     image: livekit/sip:latest
+    network_mode: host
     restart: always
-    depends_on:
-      - livekit
     env_file:
       - .env
     environment:
       SIP_CONFIG_BODY: |
         api_key: '${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}'
         api_secret: '${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}'
-        ws_url: 'ws://livekit:7880'
+        ws_url: 'ws://localhost:7880'
         redis:
-          address: 'redis:6379'
+          address: 'localhost:6379'
         sip_port: 5060
         udp_port: 5060
         rtp_port_range: 10000-20000
         logging:
           level: info
-    networks:
-      - agent_network
-    ports:
-      - "5060:5060"
-      - "5060:5060/udp"
-      - "10000-10010:10000-10010/udp"
 
   llama_cpp:
     image: ghcr.io/ggml-org/llama.cpp:server
+    network_mode: host
     command:
       - --host
       - 0.0.0.0
@@ -77,18 +65,13 @@ services:
     environment:
       - XDG_CACHE_HOME=/models
       - HF_HOME=/models
-    networks:
-      - agent_network
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://localhost:11434/v1/models > /dev/null"]
       interval: 10s
       timeout: 5s
       retries: 30          
       
+
 volumes:
   redis_data:
   livekit_data:
-
-networks:
-  agent_network:
-    driver: bridge

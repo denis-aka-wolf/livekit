@@ -1,5 +1,9 @@
 import jwt
 import time
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 def generate_access_token(api_key, api_secret, user_name, room_name):
     payload = {
@@ -19,8 +23,13 @@ def generate_access_token(api_key, api_secret, user_name, room_name):
 user_name = input("Введите имя гостя: ")
 room_name = input("Введите название комнаты: ")
 
-api_key = ""
-api_secret = ""
+api_key = os.getenv("LIVEKIT_API_KEY")
+api_secret = os.getenv("LIVEKIT_API_SECRET")
+
+if not api_key or not api_secret:
+    print("Ошибка: Не найдены учетные данные API в переменных окружения.")
+    print("Убедитесь, что в файле .env есть LIVEKIT_API_KEY и LIVEKIT_API_SECRET")
+    exit(1)
 
 token = generate_access_token(api_key, api_secret, user_name, room_name)
 print("Токен для пользователя " + user_name + ":\n" + token)
