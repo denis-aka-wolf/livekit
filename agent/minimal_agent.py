@@ -1,83 +1,49 @@
 import asyncio
 import logging
+from itertools import chain
+
 from dotenv import load_dotenv
-from livekit import rtc
-from livekit.agents import JobContext, WorkerOptions, cli, JobRequest
+from google.protobuf.json_format import MessageToDict
 
+from livekit.agents import Agent, AgentServer, AgentSession, JobContext, cli
+from livekit.plugins import openai
 
-logger = logging.getLogger("agent")
+logger = logging.getLogger("minimal-worker")
+logger.setLevel(logging.INFO)
+
 load_dotenv("../.env")  # используем основной .env файл
 
+server = AgentServer()
 
-async def request_fnc(req: JobRequest) -> None:
-    """Функция для обработки входящих запросов на задачи"""
-    logger.info(f"--- ПОЛУЧЕН ЗАПРОС НА ЗАДАЧУ: {req.job.type} ---")
-    logger.info(f"Namespace: {req.job.namespace}, Agent name: {req.job.agent_name}")
-    await req.accept()
-
-
+@server.rtc_session()
 async def entrypoint(ctx: JobContext):
-    logger.info(f"Подключение к комнате: {ctx.room.name}")
-    await ctx.connect()
-    
-    # Ждем, пока в комнате появятся другие участники
-    sip_participant = None
-    
-    # Ищем SIP участника среди уже подключенных
-    for identity, participant in ctx.room.remote_participants.items():
-        if identity.startswith('sip_'):
-            sip_participant = participant
-            logger.info(f"Найден SIP участник: {identity}")
-            break
-    
-    # Если SIP участник еще не вошел, ждем его
-    if not sip_participant:
-        logger.info("Ожидаем подключения SIP участника...")
-        async for event in ctx.room.subscribe_events():
-            if isinstance(event, rtc.ParticipantConnectedEvent):
-                if event.participant.identity.startswith('sip_'):
-                    sip_participant = event.participant
-                    logger.info(f"SIP участник подключен: {sip_participant.identity}")
-                    break
-    
-    try:
-        # Просто подтверждаем, что агент активен
-        logger.info("Агент успешно подключен к комнате с SIP участником")
-        
-        # Подписываемся на аудио дорожки SIP участника
-        if sip_participant:
-            for sid, publication in sip_participant.tracks.items():
-                if publication.kind == rtc.TrackKind.KIND_AUDIO:
-                    await publication.subscribe()
-                    logger.info(f"Подписались на аудио дорожку: {publication.sid}")
-        
-        # Обрабатываем новые аудио дорожки
-        if sip_participant:
-            @sip_participant.on("track_published")
-            def on_track_published(publication: rtc.RemoteTrackPublication, participant: rtc.RemoteParticipant):
-                if publication.kind == rtc.TrackKind.KIND_AUDIO:
-                    logger.info(f"Новая аудио дорожка от {participant.identity}: {publication.sid}")
-                    asyncio.create_task(publication.subscribe())
-        
-        # Основной цикл работы агента
-        while True:
-            await asyncio.sleep(10)
-            logger.info("Агент активен. Комната: %s", ctx.room.name)
-            
-            # Проверяем, остались ли участники в комнате
-            if ctx.room.num_participants <= 1:  # <= 1 потому что агент тоже участник
-                logger.info("Все участники покинули комнату, завершаем сессию")
-                break
-                
-    except asyncio.CancelledError:
-        logger.info("Сессия агента отменена")
+    session = AgentSession(llm=openai.realtime.RealtimeModel())
+    await session.start(Agent(instructions="You are a helpful assistant"), room=ctx.room)
 
+    logger.info(f"connected to the room {ctx.room.name}")
+
+    # log the session stats every 5 minutes
+    while True:
+        rtc_stats = await ctx.room.get_session_stats()
+
+        all_stats = chain(
+            (("PUBLISHER", stats) for stats in rtc_stats.publisher_stats),
+            (("SUBSCRIBER", stats) for stats in rtc_stats.subscriber_stats),
+        )
+
+        for source, stats in all_stats:
+            stats_kind = stats.WhichOneof("stats")
+
+            # stats_kind can be one of the following:
+            # candidate_pair, certificate, codec, data_channel, inbound_rtp, local_candidate,
+            # media_playout, media_source, outbound_rtp, peer_connection, remote_candidate,
+            # remote_inbound_rtp, remote_outbound_rtp, stats, stream, track, transport
+
+            logger.info(
+                f"RtcStats - {stats_kind} - {source}", extra={"stats": MessageToDict(stats)}
+            )
+
+        await asyncio.sleep(5 * 60)
 
 if __name__ == "__main__":
-    cli.run_app(
-        WorkerOptions(
-            entrypoint_fnc=entrypoint,
-            request_fnc=request_fnc,
-            agent_name="elaina",  # Уникальное имя для этого агента
-        )
-    )
+    cli.run_app(server)
