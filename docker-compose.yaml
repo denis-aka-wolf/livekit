@@ -1,15 +1,17 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:7-alpine
+    container_name: redis
     network_mode: host
     restart: always
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     volumes:
-      - redis_data:/data
+      - /srv/livekit/data/redis:/data
+      - /srv/livekit/redis.conf:/usr/local/etc/redis/redis.conf
 
   livekit:
     image: livekit/livekit-server:latest
+    container_name: livekit
     network_mode: host
     restart: always
     depends_on:
@@ -17,16 +19,16 @@ services:
     env_file:
       - .env
     environment:
-      # Установите свои ключи в переменных окружения
-      # LIVEKIT_KEYS: "your_api_key: your_api_secret"
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}: ${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}"
-      LIVEKIT_REDIS_ADDRESS: "localhost:6379"
+      LIVEKIT_REDIS_ADDRESS: "127.0.0.1:6379"
       LIVEKIT_DEV: "true"
+    entrypoint: ["/livekit-server"]
     volumes:
-      - livekit_data:/var/lib/livekit
+      - /srv/livekit/data/livekit:/var/lib/livekit
 
   sip:
     image: livekit/sip:latest
+    container_name: sip
     network_mode: host
     restart: always
     env_file:
@@ -37,16 +39,20 @@ services:
         api_secret: '${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}'
         ws_url: 'ws://localhost:7880'
         redis:
-          address: 'localhost:6379'
+          address: '127.0.0.1:6379'
         sip_port: 5060
         udp_port: 5060
         rtp_port_range: 10000-20000
         logging:
           level: info
+    volumes:
+      - /srv/livekit/logs:/var/log/livekit
 
   llama_cpp:
     image: ghcr.io/ggml-org/llama.cpp:server
+    container_name: llama_cpp
     network_mode: host
+    restart: unless-stopped
     command:
       - --host
       - 0.0.0.0
@@ -58,10 +64,8 @@ services:
       - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
       - --ctx-size
       - "${LLAMA_CTX_SIZE:-16384}"
-    ports:
-      - "${LLAMA_HOST_PORT:-11436}:11434"
     volumes:
-      - ./inference/llama/models:/models
+      - /srv/livekit/inference/llama/models:/models
     environment:
       - XDG_CACHE_HOME=/models
       - HF_HOME=/models
@@ -69,9 +73,35 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://localhost:11434/v1/models > /dev/null"]
       interval: 10s
       timeout: 5s
-      retries: 30          
-      
+      retries: 30
 
-volumes:
-  redis_data:
-  livekit_data:
+  kokoro:
+    image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
+    container_name: kokoro
+    restart: unless-stopped
+    ports:
+      - "8880:8880"
+
+  whisper:
+    build:
+      context: ./inference/whisper
+    container_name: whisper
+    restart: unless-stopped
+    environment:
+      - VOXBOX_HF_REPO_ID=Systran/faster-whisper-small
+      - VOXBOX_DEVICE=cpu
+      - DATA_DIR=/data
+    volumes:
+      - /srv/livekit/whisper:/data
+    ports:
+      - "11435:80"
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - /srv/livekit/nginx/conf.d:/etc/nginx/conf.d
+      - /srv/livekit/nginx/html:/usr/share/nginx/html

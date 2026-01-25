@@ -6,6 +6,7 @@
 /livekit_data
 /agent/venv
 /agent/.env
+/agent/__pycache__
 /agent_env
 
 /agents-playground/.env
@@ -15,6 +16,10 @@
 /livekitdocker/livekit.yaml
 
 /inference
+/whisper
+/logs
+/kokoro
+/data 
 
 # dependencies
 /node_modules
