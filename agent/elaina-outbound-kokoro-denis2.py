@@ -27,8 +27,7 @@ from livekit.plugins import (
     silero,
     # noise_cancellation,  # noqa: F401 - commented out to prevent cloud filters
 )
-#from livekit.plugins.turn_detector.english import EnglishModel
-
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 logger = logging.getLogger("elaina-outbound-caller-worker")
 logger.setLevel(logging.INFO)
@@ -77,6 +76,9 @@ class OutboundCaller(Agent):
             
             Имя клиента: {name}. 
             Его запись на прием: {appointment_time}.
+            Отвечай только на русском языке.
+            Ответы должны быть краткими, так как они озвучиваются голосом.
+            Ты отвечаешь только по стоматологической клинике, если клиент говорит на другие темы то возвращай его аккуратно к планированию посещения стоматологической клиники.
             """
         )
         # keep reference to the participant for transfers
@@ -217,12 +219,13 @@ async def entrypoint(ctx: JobContext):
         stt=openai.STT(
             base_url="http://127.0.0.1:11435/v1",
             model=os.getenv("VOXBOX_HF_REPO_ID", "Systran/faster-whisper-small"),
-            api_key="no-key-needed"
+            api_key="no-key-needed",
+            language="ru",
         ),
         tts=openai.TTS(
             base_url="http://127.0.0.1:8880/v1",
             model="kokoro",
-            voice="af_heart",
+            voice="rf_cherepanov",
             api_key="no-key-needed",
         ),
 
@@ -278,6 +281,6 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="elaina-outbound-kokoro",
+            agent_name="elaina-outbound-caller",
         )
     )

@@ -108,3 +108,6 @@ services:
     volumes:
       - /srv/livekit/nginx/conf.d:/etc/nginx/conf.d
       - /srv/livekit/nginx/html:/usr/share/nginx/html
+      # Монтируем сертификаты Let’s Encrypt напрямую в контейнер
+      - /etc/letsencrypt/live/brainsync.ru/fullchain.pem:/etc/nginx/certs/brainsync.crt:ro
+      - /etc/letsencrypt/live/brainsync.ru/privkey.pem:/etc/nginx/certs/brainsync.key:ro
