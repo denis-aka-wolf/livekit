@@ -1,0 +1,32 @@
+#####################################################################
+# LiveKit Server Configuration – упрощённый вариант без лишних полей
+#####################################################################
+
+logging:
+  # уровни логирования: debug / info / warn / error
+  level: debug
+  pion_level: info
+  json: false
+
+rtc:
+  tcp_port: 7881
+  udp_port: 50000
+  use_external_ip: true
+
+redis:
+  address: "127.0.0.1:6379"
+  db: 0
+
+# настройки комнат
+room:
+  # автоматически создавать комнаты по запросу
+  auto_create: true
+  # через сколько секунд после ухода всех участников удалять комнату
+  empty_timeout: 10
+
+# TURN можно пока не включать
+turn:
+  enabled: false
+
+# ключи не указываем тут, они идут через ENV (LIVEKIT_KEYS)
+keys: {}

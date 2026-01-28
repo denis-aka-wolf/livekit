@@ -10,7 +10,7 @@ services:
       - /srv/livekit/redis.conf:/usr/local/etc/redis/redis.conf
 
   livekit:
-    image: livekit/livekit-server:latest
+    image: livekit/livekit-server:v1.9.8
     container_name: livekit
     network_mode: host
     restart: always
@@ -21,10 +21,11 @@ services:
     environment:
       LIVEKIT_KEYS: "${LIVEKIT_API_KEY:-YOUR_API_KEY_HERE}: ${LIVEKIT_API_SECRET:-YOUR_API_SECRET_HERE}"
       LIVEKIT_REDIS_ADDRESS: "127.0.0.1:6379"
-      LIVEKIT_DEV: "true"
-    entrypoint: ["/livekit-server"]
+      LIVEKIT_DEV: "false"
+    entrypoint: ["/livekit-server", "--config", "/livekit.yaml"]
     volumes:
       - /srv/livekit/data/livekit:/var/lib/livekit
+      - /srv/livekit/livekit.yaml:/livekit.yaml
 
   sip:
     image: livekit/sip:latest
@@ -43,6 +44,7 @@ services:
         sip_port: 5060
         udp_port: 5060
         rtp_port_range: 10000-20000
+        use_external_ip: true
         logging:
           level: info
     volumes:
@@ -102,6 +104,7 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - /srv/livekit/nginx/conf.d:/etc/nginx/conf.d
       - /srv/livekit/nginx/html:/usr/share/nginx/html

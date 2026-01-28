@@ -21,6 +21,10 @@
 /kokoro
 /data 
 
+/json
+
+docker-compose.yaml.bak.2026-01-25_0938
+
 # dependencies
 /node_modules
 /.pnp
