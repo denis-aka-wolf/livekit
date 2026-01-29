@@ -23,12 +23,12 @@ from livekit.agents import (
 )
 from livekit.plugins import (
     openai,
-    cartesia,
+#    cartesia,
     silero,
     # noise_cancellation,  # noqa: F401 - commented out to prevent cloud filters
 )
-#from livekit.plugins.turn_detector.english import EnglishModel
-
+from livekit.plugins.turn_detector.multilingual import MultilingualModel
+import livekit.plugins.piper_tts as piper_tts
 
 logger = logging.getLogger("elaina-outbound-caller-worker")
 logger.setLevel(logging.INFO)
@@ -53,7 +53,7 @@ load_env_file(env_path)
 #outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
 #outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID", OUTBOUND_TRUNK_ID)
 outbound_trunk_id = OUTBOUND_TRUNK_ID
-logger.info(f"Using outbound SIP trunk: {outbound_trunk_id!r}")
+logger.info(f"Используемый SIP trunk: {outbound_trunk_id!r}")
 
 
 class OutboundCaller(Agent):
@@ -66,12 +66,20 @@ class OutboundCaller(Agent):
     ):
         super().__init__(
             instructions=f"""
-            You are a scheduling assistant for a dental practice. Your interface with user will be voice.
-            You will be on a call with a patient who has an upcoming appointment. Your goal is to confirm the appointment details.
-            As a customer service representative, you will be polite and professional at all times. Allow user to end the conversation.
+            Вы работаете помощником по планированию в стоматологической клинике. Ваше взаимодействие с пользователем будет осуществляться по телефону.
+            Вы будете разговаривать по телефону с пациентом, у которого назначена встреча. 
+            Ваша задача — подтвердить детали записи на прием.
 
-            When the user would like to be transferred to a human agent, first confirm with them. upon confirmation, use the transfer_call tool.
-            The customer's name is {name}. His appointment is on {appointment_time}.
+            Как представитель службы поддержки клиентов, вы должны быть вежливы и профессиональны во всех ситуациях. 
+            Позвольте пользователю завершить разговор.
+            Если пользователь хочет, чтобы его перевели к оператору, сначала подтвердите это. 
+            После подтверждения используйте инструмент transfer_call.
+            
+            Имя клиента: {name}. 
+            Его запись на прием: {appointment_time}.
+            Отвечай только на русском языке.
+            Ответы должны быть краткими, так как они озвучиваются голосом.
+            Ты отвечаешь только по стоматологической клинике, если клиент говорит на другие темы то возвращай его аккуратно к планированию посещения стоматологической клиники.
             """
         )
         # keep reference to the participant for transfers
@@ -83,7 +91,7 @@ class OutboundCaller(Agent):
         self.participant = participant
 
     async def hangup(self):
-        """Helper function to hang up the call by deleting the room"""
+        """Вспомогательная функция для завершения вызова путем удаления комнаты."""
 
         job_ctx = get_job_context()
         await job_ctx.api.room.delete_room(
@@ -94,7 +102,7 @@ class OutboundCaller(Agent):
 
     @function_tool()
     async def transfer_call(self, ctx: RunContext):
-        """Transfer the call to a human agent, called after confirming with the user"""
+        """Перевести звонок оператору, после подтверждения пользователя."""
 
         transfer_to = self.dial_info["transfer_to"]
         if not transfer_to:
@@ -102,9 +110,9 @@ class OutboundCaller(Agent):
 
         logger.info(f"transferring call to {transfer_to}")
 
-        # let the message play fully before transferring
+        #Перед передачей предупреждаем.
         await ctx.session.generate_reply(
-            instructions="let the user know you'll be transferring them"
+            instructions="Сообщите пользователю, что вы собираетесь их перевести."
         )
 
         job_ctx = get_job_context()
@@ -127,7 +135,7 @@ class OutboundCaller(Agent):
 
     @function_tool()
     async def end_call(self, ctx: RunContext):
-        """Called when the user wants to end the call"""
+        """Вызывается, когда пользователь хочет завершить вызов."""
         logger.info(f"ending the call for {self.participant.identity}")
 
         # let the agent finish speaking
@@ -143,10 +151,11 @@ class OutboundCaller(Agent):
         ctx: RunContext,
         date: str,
     ):
-        """Called when the user asks about alternative appointment availability
+        """Вызывается, когда пользователь запрашивает информацию 
+            о наличии альтернативных вариантов записи на прием.
 
-        Args:
-            date: The date of the appointment to check availability for
+        Аргументы:
+            date: Дата записи на прием, для которой необходимо проверить наличие свободных мест.
         """
         logger.info(
             f"looking up availability for {self.participant.identity} on {date}"
@@ -163,12 +172,12 @@ class OutboundCaller(Agent):
         date: str,
         time: str,
     ):
-        """Called when the user confirms their appointment on a specific date.
-        Use this tool only when they are certain about the date and time.
+        """Вызывается, когда пользователь подтверждает свою запись на определенную дату.
+        Используйте этот инструмент только в том случае, если вы уверены в дате и времени.
 
-        Args:
-            date: The date of the appointment
-            time: The time of the appointment
+        Аргументы:
+            date: Дата записи
+            time: Время записи
         """
         logger.info(
             f"confirming appointment for {self.participant.identity} on {date} at {time}"
@@ -177,7 +186,8 @@ class OutboundCaller(Agent):
 
     @function_tool()
     async def detected_answering_machine(self, ctx: RunContext):
-        """Called when the call reaches voicemail. Use this tool AFTER you hear the voicemail greeting"""
+        """Этот инструмент срабатывает, когда звонок поступает на голосовую почту.
+        Используйте его ПОСЛЕ того, как услышите приветствие голосовой почты."""
         logger.info(f"detected answering machine for {self.participant.identity}")
         await self.hangup()
 
@@ -186,47 +196,54 @@ async def entrypoint(ctx: JobContext):
     logger.info(f"connecting to room {ctx.room.name}")
     await ctx.connect()
 
-    # when dispatching the agent, we'll pass it the approriate info to dial the user
-    # dial_info is a dict with the following keys:
-    # - phone_number: the phone number to dial
-    # - transfer_to: the phone number to transfer the call to when requested
+    # При отправке вызова агенту мы передадим ему необходимую информацию для набора номера пользователя.
+    # dial_info — это словарь со следующими ключами:
+    # - phone_number: номер телефона для набора
+    # - transfer_to: номер телефона, на который будет переадресован звонок по запросу
     dial_info = json.loads(ctx.job.metadata)
     participant_identity = phone_number = dial_info["phone_number"]
 
-    # look up the user's phone number and appointment details
+    # Найти номер телефона пользователя и информацию о встрече
     agent = OutboundCaller(
         name="Denis",
         appointment_time="next Tuesday at 3pm",
         dial_info=dial_info,
     )
 
-    
     llama_model = os.getenv("LLAMA_MODEL", "qwen3-4b")
     llama_base_url = os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
 
-    # the following uses GPT-4o, local Whisper STT and Cartesia TTS
+    # Пайплайн
     session = AgentSession(
-#        turn_detection=EnglishModel(),
-        vad=silero.VAD.load(),
+        turn_detection=MultilingualModel(), # Отвечает за интеллектуальное определение конца фразы
+        vad=silero.VAD.load(
+            min_speech_duration=0.1,       # Минимальная длительность речи для детекции
+            min_silence_duration=0.1,      # Минимальная тишина перед завершением речи
+            prefix_padding_duration=0.2,   # Время предварительной задержки для более быстрой детекции
+            #sample_rate=16000              # Частота дискретизации (поддерживаются только 8000 и 16000)
+        ), # Определяет наличие человеческой речи в аудиопотоке
+        # Главные ручки скорости:
+        min_endpointing_delay=0.15, # Задержка после VAD (ставим 150 мс)
+        #intent_threshold=0.9,       # Уверенность в завершении намерения
         stt=openai.STT(
             base_url="http://127.0.0.1:11435/v1",
             model=os.getenv("VOXBOX_HF_REPO_ID", "Systran/faster-whisper-small"),
-            api_key="no-key-needed"
+            api_key="no-key-needed",
+            language="ru",
         ),
-        # you can also use OpenAI's TTS with openai.TTS()
-        tts=cartesia.TTS(),
+        tts=piper_tts.TTS(
+            base_url="http://localhost:5000/",
+        ),
+
         llm=openai.LLM(
             base_url=llama_base_url,
-            # base_url="http://localhost:11436/v1", # uncomment for local testing
             model=llama_model,
-            api_key="no-key-needed"
+            api_key="no-key-needed",
         ),
-        # you can also use a speech-to-speech model like OpenAI's Realtime API
-        # llm=openai.realtime.RealtimeModel()
     )
 
-    # start the session first before dialing, to ensure that when the user picks up
-    # the agent does not miss anything the user says
+    # Начинаем сессию перед набором номера, чтобы гарантировать, что когда пользователь ответит,
+    # агент не пропустит ничего из того, что скажет пользователь.
     session_started = asyncio.create_task(
         session.start(
             agent=agent,
@@ -234,7 +251,7 @@ async def entrypoint(ctx: JobContext):
         )
     )
 
-    # `create_sip_participant` starts dialing the user
+    # `create_sip_participant` начинает набор номера пользователя
     try:
         await ctx.api.sip.create_sip_participant(
             api.CreateSIPParticipantRequest(
@@ -242,15 +259,18 @@ async def entrypoint(ctx: JobContext):
                 sip_trunk_id=outbound_trunk_id,
                 sip_call_to=phone_number,
                 participant_identity=participant_identity,
-                # function blocks until user answers the call, or if the call fails
+                # Функция блокируется до тех пор, пока пользователь не ответит на звонок или если звонок не удастся.
                 wait_until_answered=True,
             )
         )
 
-        # wait for the agent session start and participant join
+        # Ждем пока клиент присоединится к комнате
         await session_started
         participant = await ctx.wait_for_participant(identity=participant_identity)
         logger.info(f"participant joined: {participant.identity}")
+
+        # Сразу говорим фразу
+        await session.say("Здравствуйте, меня зовут Елена. Чем могу быть полезна?")
 
         agent.set_participant(participant)
 
@@ -270,3 +290,4 @@ if __name__ == "__main__":
             agent_name="elaina-outbound-caller",
         )
     )
+
