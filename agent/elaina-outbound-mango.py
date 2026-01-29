@@ -28,7 +28,7 @@ from livekit.plugins import (
     # noise_cancellation,  # noqa: F401 - commented out to prevent cloud filters
 )
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
-import livekit.plugins.piper_tts as piper_tts
+from ../silero/silero_my_tts import TTS
 
 logger = logging.getLogger("elaina-outbound-caller-worker")
 logger.setLevel(logging.INFO)
@@ -231,10 +231,11 @@ async def entrypoint(ctx: JobContext):
             api_key="no-key-needed",
             language="ru",
         ),
-        tts=piper_tts.TTS(
-            base_url="http://localhost:5000/",
+        tts=TTS(
+            speaker="baya",           # голос
+            sample_rate=48000,      # частота дискретизации (лучше не менять)
+            # model_path="путь/к/модели.pt"  # можно переопределить путь к модели
         ),
-
         llm=openai.LLM(
             base_url=llama_base_url,
             model=llama_model,
@@ -287,7 +288,7 @@ if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="elaina-outbound-caller",
+            agent_name="elaina-outbound-mango",
         )
     )
 
