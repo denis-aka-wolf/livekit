@@ -224,8 +224,8 @@ async def entrypoint(ctx: JobContext):
             language="ru",
         ),
         tts=piper_tts.TTS(
-            model_path="../voices/ru/ru_RU/irina/ru_RU-irina-medium.onnx",
-            config_path="../voices/ru/ru_RU/irina/ru_RU-irina-medium.onnx.json"
+            url="http://localhost:5000",
+            voice="ru_RU-irina-medium"
         ),
 
         llm=openai.LLM(
