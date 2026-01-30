@@ -28,6 +28,7 @@ from livekit.plugins import (
     # noise_cancellation,  # noqa: F401 - commented out to prevent cloud filters
 )
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
+import livekit.plugins.piper_tts as piper_tts
 
 logger = logging.getLogger("elaina-outbound-caller-worker")
 logger.setLevel(logging.INFO)
@@ -222,11 +223,9 @@ async def entrypoint(ctx: JobContext):
             api_key="no-key-needed",
             language="ru",
         ),
-        tts=openai.TTS(
-            base_url="http://127.0.0.1:8880/v1",
-            model="kokoro",
-            voice="rf_cherepanov",
-            api_key="no-key-needed",
+        tts=piper_tts.TTS(
+            model_path="../voices/ru/ru_RU/irina/ru_RU-irina-medium.onnx",
+            config_path="../voices/ru/ru_RU/irina/ru_RU-irina-medium.onnx.json"
         ),
 
         llm=openai.LLM(
