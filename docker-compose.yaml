@@ -66,6 +66,8 @@ services:
       - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
       - --ctx-size
       - "${LLAMA_CTX_SIZE:-16384}"
+      - --threads
+      - "16" 
     volumes:
       - /srv/livekit/inference/llama/models:/models
     environment:

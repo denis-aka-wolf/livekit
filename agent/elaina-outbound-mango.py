@@ -5,7 +5,8 @@ import logging
 from dotenv import load_dotenv
 import json
 import os
-OUTBOUND_TRUNK_ID = "ST_NdEHgspjNRwV"
+import sys
+
 from typing import Any
 
 from livekit import rtc, api
@@ -28,10 +29,14 @@ from livekit.plugins import (
     # noise_cancellation,  # noqa: F401 - commented out to prevent cloud filters
 )
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
-from ../silero/silero_my_tts import TTS
+# Добавляем родительскую директорию в sys.path
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from elaina_tts.elaina_tts import ElainaTTS
 
 logger = logging.getLogger("elaina-outbound-caller-worker")
 logger.setLevel(logging.INFO)
+
+OUTBOUND_TRUNK_ID = "ST_NdEHgspjNRwV"
 
 def load_env_file(env_path):
     """Загрузка .env файла вручную для избежания проблем с символами возврата каретки"""
@@ -212,6 +217,8 @@ async def entrypoint(ctx: JobContext):
 
     llama_model = os.getenv("LLAMA_MODEL", "qwen3-4b")
     llama_base_url = os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+    #aidar, baya, kseniya, xenia, eugene
+    elaina_tts = ElainaTTS(speaker="kseniya", sample_rate=48000, num_channels=1)
 
     # Пайплайн
     session = AgentSession(
@@ -231,11 +238,7 @@ async def entrypoint(ctx: JobContext):
             api_key="no-key-needed",
             language="ru",
         ),
-        tts=TTS(
-            speaker="baya",           # голос
-            sample_rate=48000,      # частота дискретизации (лучше не менять)
-            # model_path="путь/к/модели.pt"  # можно переопределить путь к модели
-        ),
+        tts=elaina_tts,
         llm=openai.LLM(
             base_url=llama_base_url,
             model=llama_model,
