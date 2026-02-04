@@ -56,75 +56,55 @@ load_env_file(env_path)
 
 class InboundAgent(Agent):
     def __init__(self, *, phone_number: str = ""):
-        super().__init__(
-            instructions=f"""
-Номер телефона клиента: {phone_number}.
-Имя клиента: Иван
-
-Ты — виртуальный агент Елена, 21 год, работаешь медицинским регистратором в многопрофильной клинике СМИТРА. 
-
-Твоя задача — подтверждать или переносить запись клиента на приём.
-
-Правила работы:
-
-Не здоровайся, сразу отвечай пользователю
-Используй только деловой, вежливый тон.
-Общайся строго в рамках темы:
-подтверждение записи;
-перенос приёма на другое время/дату.
-
-Если клиент задаёт вопросы о клинике, услугах, ценах или иных темах, отвечай:
-«Я могу помочь только с подтверждением записи или её переносом. Для других вопросов, пожалуйста, обратитесь в регистратуру.»
-
-Никогда не выходи за рамки сценария. Не предлагай дополнительную информацию.
-
-Сценарий диалога:
-
-Не здаровайся, сразу начинай диалог
-
-Получение имени и проверка записи
-Если запись найдена:
-«Василий, подтверждаю вашу запись на тридцатое января в девятьнадцать тридцать к врачу Иванову Ивану Ивановичу. Всё верно?»
-
-Если запись не найдена:
-«К сожалуйста, уточните дату и время приёма.»
-
-Подтверждение или перенос
-Если клиент подтверждает:
-«Запись подтверждена. Ждём вас тридцатого января в девятьнадцать тридцать. Если потребуется перенести приём, сообщите — помогу подобрать удобное время.»
-
-Если клиент хочет перенести:
-«Поняла, вы хотите перенести приём. Есть свободные слоты: первого февраля на двенадцать часов и пятого февраля на вечер в девятьнадцать тридцать. Какое время вам подходит?»
-
-После выбора клиента:
-«Записала вас на пятое февраля в девятьнадцать тридцать к Иванову Ивану Ивановичу. Подтверждаете?»
-
-При подтверждении:
-
-Завершение разговора
-«Спасибо за обращение! Хорошего дня!»
-
-Ограничения:
-Не используй сленг, эмодзи или неформальные выражения.
-Не обсуждай медицинские вопросы.
-Если клиент настаивает на информации вне твоей компетенции, повторяй шаблон
-Время разговора — не более 2 минут.
-Ответ должен быть не более 20-30 слов.
-Все цифры пиши текстом, не используй сокращения
-
-Примеры ответов:
-На вопрос «Сколько стоит лечение?» → «Я могу помочь только с подтверждением записи или её переносом…»
-На благодарность → «Рада помочь! До свидания.»
-При неясном запросе → «Пожалуйста, уточните, хотите ли вы подтвердить или перенести запись?»
-
-Свободные слоты:
-Иванов Иван Иванович - первого февраля на двенадцать часов и пятого февраля на вечер в девятьнадцать тридцать
-   """
-        )
+        # Словарь сопоставления номеров телефонов именам клиентов
+        phone_to_name = {
+            "79133888778": "Денис Сергеевич",
+            "79955701443": "Денис",
+            "79137296699": "Павел",
+            "79831379240": "Артем"
+        }
+        # Определяем имя клиента по номеру телефона
+        self.client_name = phone_to_name.get(phone_number, "Иван")
+        
+        # Читаем промпт из markdown файла
+        prompt_template = self._load_prompt_template()
+        # Подставляем переменные в промпт
+        instructions = prompt_template.format(phone_number=phone_number, client_name=self.client_name)
+        
+        super().__init__(instructions=instructions)
+        
         # keep reference to the participant for transfers
         self.participant: rtc.RemoteParticipant | None = None
 
         self.phone_number = phone_number
+        
+        # Флаг для отслеживания состояния завершения вызова
+        self.call_ended = False
+    
+    def _load_prompt_template(self):
+        """Загружает шаблон промпта из markdown файла"""
+        
+        # Определяем путь к файлу с промптом
+        prompt_file_path = os.path.join(os.path.dirname(__file__), 'elaina-inbound-mango.md')
+        
+        # Читаем содержимое файла
+        with open(prompt_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            
+        # Извлекаем только содержимое после заголовка первого уровня
+        lines = content.split('\n')
+        start_idx = -1
+        for i, line in enumerate(lines):
+            if line.startswith('## Системный промпт для агента Елена'):
+                start_idx = i + 1
+                break
+        
+        if start_idx != -1:
+            # Возвращаем всё содержимое после заголовка
+            return '\n'.join(lines[start_idx:]).strip()
+        else:
+            # Если заголовок не найден, возвращаем весь контент
+            return content.strip()
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
@@ -176,10 +156,19 @@ class InboundAgent(Agent):
         """Вызывается, когда пользователь хочет завершить вызов."""
         logger.info(f"ending the call for {self.participant.identity}")
 
-        # let the agent finish speaking
-        current_speech = ctx.session.current_speech
-        if current_speech:
-            await current_speech.wait_for_playout()
+        # Устанавливаем флаг завершения вызова
+        self.call_ended = True
+
+        # Останавливаем любые текущие и будущие попытки генерации речи
+        try:
+            current_speech = ctx.session.current_speech
+            if current_speech:
+                await current_speech.wait_for_playout()
+        except Exception as e:
+            logger.warning(f"Error waiting for speech playout: {e}")
+
+        # Небольшая задержка для обеспечения завершения всех процессов
+        await asyncio.sleep(0.5)
 
         await self.hangup()
 
@@ -198,7 +187,7 @@ class InboundAgent(Agent):
         logger.info(
             f"looking up availability for {self.participant.identity} on {date}"
         )
-        await asyncio.sleep(3)
+        #await asyncio.sleep(3)
         return {
             "available_times": ["1pm", "2pm", "3pm"],
         }
@@ -246,6 +235,14 @@ async def entrypoint(ctx: JobContext):
     # Получаем номер телефона из SIP-информации
     # Пытаемся получить номер из разных возможных полей
     phone_number = sip_data.get("sip_from_user") or sip_data.get("from_user") or sip_data.get("to_user", "unknown")
+    
+    # Если номер не найден в SIP-данных, пробуем извлечь из названия комнаты
+    if phone_number == "unknown":
+        import re
+        room_phone_match = re.search(r'_(\d{11})_', ctx.room.name)
+        if room_phone_match:
+            phone_number = room_phone_match.group(1)
+    
     logger.info(f"Phone number determined: {phone_number}")
 
     # Создаем агента с информацией о звонящем
@@ -258,7 +255,7 @@ async def entrypoint(ctx: JobContext):
 
     # Пайплайн
     session = AgentSession(
-        turn_detection=MultilingualModel(), # Отвечает за интеллектуальное определение конца фразы
+        #turn_detection=MultilingualModel(), # Отвечает за интеллектуальное определение конца фразы
         vad=silero.VAD.load(
             min_speech_duration=0.1,      # Минимальная длительность речи для детекции (увеличено для снижения нагрузки)
             min_silence_duration=0.5,     # Минимальная тишина перед завершением речи (увеличено для лучшей стабильности)
@@ -266,7 +263,8 @@ async def entrypoint(ctx: JobContext):
             #sample_rate=16000              # Частота дискретизации (поддерживаются только 8000 и 16000)
         ), # Определяет наличие человеческой речи в аудиопотоке
         # Главные ручки скорости:
-        min_endpointing_delay=0.3, # Задержка после VAD (увеличено для более стабильной работы)
+        min_endpointing_delay=0.1, # Задержка после VAD (увеличено для более стабильной работы)
+        min_interruption_words=2, # 0 или 1 для мгновенной реакции на перебивание
         #intent_threshold=0.9,       # Уверенность в завершении намерения
         stt=openai.STT(
             base_url="http://127.0.0.1:11435/v1",
@@ -279,11 +277,47 @@ async def entrypoint(ctx: JobContext):
             base_url=llama_base_url,
             model=llama_model,
             api_key="no-key-needed",
-            timeout=120.0,  # Увеличенный таймаут для генерации ответа
+            timeout=5.0,  # Увеличенный таймаут для генерации ответа
             max_retries=3,  # Количество попыток при ошибках
         ),
     )
 
+    # Обработчик для всех метрик
+    from livekit.agents import metrics, MetricsCollectedEvent
+    
+    @session.on("metrics_collected")
+    def _on_metrics_collected(ev: MetricsCollectedEvent):
+        # Логируем все метрики
+        #metrics.log_metrics(ev.metrics)
+        
+        # Также можем логировать каждую метрику отдельно
+        metric_type = type(ev.metrics).__name__
+        if metric_type == "EOUMetrics":
+            logger.info(f"[VAD] Конец фразы найден через: {ev.metrics.end_of_utterance_delay:.2f}с")
+        elif metric_type == "STTMetrics":
+            logger.info(f"[STT] Распознано за: {ev.metrics.duration:.2f}с")
+        elif metric_type == "LLMMetrics":
+            logger.info(f"[LLM] Время до первого слова (TTFT): {ev.metrics.ttft:.2f}с")
+            logger.info(f"[LLM] Общая генерация: {ev.metrics.duration:.2f}с")
+        elif metric_type == "TTSMetrics":
+            logger.info(f"[TTS] Время до начала звука (TTFB): {ev.metrics.ttfb:.2f}с")
+        
+    # Прогрев промпта (Prompt Warmup) - выполняем холостой вызов LLM для создания кэша
+    try:
+        # Читаем промпт из markdown файла, как это делает сам агент
+        prompt_template = agent._load_prompt_template()
+        # Подставляем переменные в промпт
+        warmup_prompt = prompt_template.format(phone_number=phone_number, client_name=agent.client_name)
+        
+        # Выполняем холостой вызов для прогрева модели
+        await session.llm.chat(
+            history=[openai.ChatMessage(role="system", content=warmup_prompt)],
+            temperature=0.7
+        )
+        logger.info("Prompt warmup completed successfully")
+    except Exception as e:
+        logger.warning(f"Prompt warmup failed: {e}")
+    
     # Начинаем сессию агента
     await session.start(agent=agent, room=ctx.room)
 
@@ -291,11 +325,28 @@ async def entrypoint(ctx: JobContext):
     participant = await ctx.wait_for_participant()  # Ожидаем первого участника
     logger.info(f"participant joined: {participant.identity}")
 
+    # Если номер телефона не был определен ранее, пробуем извлечь из идентификатора участника
+    if agent.phone_number == "unknown":
+        import re
+        participant_identity = participant.identity
+        if participant_identity and participant_identity.startswith('sip_'):
+            phone_number = participant_identity[4:]  # Убираем префикс 'sip_'
+            # Обновляем имя клиента в агенте
+            phone_to_name = {
+                "79133888778": "Денис Сергеевич",
+                "79955701443": "Денис",
+                "79137296699": "Павел",
+                "79831379240": "Артем"
+            }
+            agent.client_name = phone_to_name.get(phone_number, "Иван")
+            agent.phone_number = phone_number
+
     # Устанавливаем участника в агенте
     agent.set_participant(participant)
 
     # Сразу говорим фразу приветствия
-    await session.say('<prosody rate="fast"> Здравствуйте Иван, медицинский центр СМИТРА. Меня зовут Елена, слушаю вас? </prosody>')
+    await session.say(f'<prosody rate="175%"> Здравствуйте {agent.client_name}, медицинский центр СМИТРА. Меня зовут Елена, слушаю вас? </prosody>')
+
 
 
 if __name__ == "__main__":

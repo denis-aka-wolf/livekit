@@ -63,17 +63,19 @@ services:
       - --hf-repo
       - "unsloth/Qwen3-4B-Instruct-2507-GGUF" #- "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
       - --hf-file
-      - "Qwen3-4B-Instruct-2507-IQ4_XS.gguf" # Явно просим легкую версию
+      - "Qwen3-4B-Instruct-2507-Q4_K_M.gguf" # Явно просим легкую версию
       - --alias
       - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
       - --ctx-size
-      - "${LLAMA_CTX_SIZE:-16384}"
+      - "4096" #"${LLAMA_CTX_SIZE:-16384}"
       - --threads
       - "8"  # Потому что команда lscpu выводит Core(s) per socket:   8
       - --n-gpu-layers
       - "0"  # Отключаем GPU для стабильности CPU-обработки
       - --parallel
-      - "4"  # Количество параллельных запросов
+      - "1" # Количество параллельных запросов
+      - --batch-size
+      - "512" 
       - --mlock   # Чтобы модель не улетала в SWAP
       - --log-disable  # Отключаем логирование для улучшения производительности
     volumes:
@@ -98,11 +100,12 @@ services:
     build:
       context: ./inference/whisper
     container_name: whisper
-    restart: unless-stopped
     environment:
-      - VOXBOX_HF_REPO_ID=Systran/faster-whisper-small
+      - VOXBOX_HF_REPO_ID=Systran/faster-whisper-tiny
       - VOXBOX_DEVICE=cpu
-      - DATA_DIR=/data
+      - VOXBOX_COMPUTE_TYPE=int8
+      - OMP_NUM_THREADS=8
+      - CT2_THREAD_COUNT=8
     volumes:
       - /srv/livekit/whisper:/data
     ports:

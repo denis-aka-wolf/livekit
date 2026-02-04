@@ -68,6 +68,9 @@ class OutboundCaller(Agent):
         self.participant: rtc.RemoteParticipant | None = None
         # Информация о наборе (номер телефона и куда переводить)
         self.dial_info = dial_info
+        
+        # Флаг для отслеживания состояния завершения вызова
+        self.call_ended = False
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         """Метод для запоминания ID собеседника, когда он поднимет трубку."""
@@ -122,10 +125,19 @@ class OutboundCaller(Agent):
         """Инструмент: Завершает звонок, когда пользователь прощается."""
         logger.info(f"Завершение звонка для {self.participant.identity}")
 
-        # Дожидаемся, пока агент договорит последнюю фразу перед тем как повесить трубку
-        current_speech = ctx.session.current_speech
-        if current_speech:
-            await current_speech.wait_for_playout()
+        # Устанавливаем флаг завершения вызова
+        self.call_ended = True
+
+        # Останавливаем любые текущие и будущие попытки генерации речи
+        try:
+            current_speech = ctx.session.current_speech
+            if current_speech:
+                await current_speech.wait_for_playout()
+        except Exception as e:
+            logger.warning(f"Error waiting for speech playout: {e}")
+
+        # Небольшая задержка для обеспечения завершения всех процессов
+        await asyncio.sleep(0.5)
 
         await self.hangup()
 

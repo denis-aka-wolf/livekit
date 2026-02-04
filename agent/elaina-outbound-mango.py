@@ -137,6 +137,9 @@ class OutboundCaller(Agent):
         self.participant: rtc.RemoteParticipant | None = None
 
         self.dial_info = dial_info
+        
+        # Флаг для отслеживания состояния завершения вызова
+        self.call_ended = False
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
@@ -189,10 +192,19 @@ class OutboundCaller(Agent):
         """Вызывается, когда пользователь хочет завершить вызов."""
         logger.info(f"ending the call for {self.participant.identity}")
 
-        # let the agent finish speaking
-        current_speech = ctx.session.current_speech
-        if current_speech:
-            await current_speech.wait_for_playout()
+        # Устанавливаем флаг завершения вызова
+        self.call_ended = True
+
+        # Останавливаем любые текущие и будущие попытки генерации речи
+        try:
+            current_speech = ctx.session.current_speech
+            if current_speech:
+                await current_speech.wait_for_playout()
+        except Exception as e:
+            logger.warning(f"Error waiting for speech playout: {e}")
+
+        # Небольшая задержка для обеспечения завершения всех процессов
+        await asyncio.sleep(0.5)
 
         await self.hangup()
 
