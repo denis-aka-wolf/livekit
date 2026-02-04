@@ -302,21 +302,26 @@ async def entrypoint(ctx: JobContext):
         elif metric_type == "TTSMetrics":
             logger.info(f"[TTS] Время до начала звука (TTFB): {ev.metrics.ttfb:.2f}с")
         
-    # Прогрев промпта (Prompt Warmup) - выполняем холостой вызов LLM для создания кэша
+    # Прогрев промпта (Prompt Warmup)
     try:
-        # Читаем промпт из markdown файла, как это делает сам агент
         prompt_template = agent._load_prompt_template()
-        # Подставляем переменные в промпт
         warmup_prompt = prompt_template.format(phone_number=phone_number, client_name=agent.client_name)
-        
-        # Выполняем холостой вызов для прогрева модели
-        await session.llm.chat(
-            history=[openai.ChatMessage(role="system", content=warmup_prompt)],
+        logger.info("🔥 Начинаю реальный прогрев LLM...")
+        # Запускаем чат
+        chat_stream = session.llm.chat(
+            history=[openai.ChatMessage(role="system", content=warmup_prompt),
+                     openai.ChatMessage(role="user", content="Привет")], # Добавляем имитацию юзера
             temperature=0.7
         )
-        logger.info("Prompt warmup completed successfully")
+        # ВАЖНО: нужно прочитать хотя бы один фрагмент из потока, 
+        # чтобы llama_cpp начала вычисления
+        async for chunk in chat_stream:
+            # Нам не нужен текст, нам нужен сам факт обработки
+            break 
+        logger.info("✅ Prompt warmup completed (кэш создан)")
     except Exception as e:
         logger.warning(f"Prompt warmup failed: {e}")
+
     
     # Начинаем сессию агента
     await session.start(agent=agent, room=ctx.room)
