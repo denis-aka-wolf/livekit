@@ -133,23 +133,47 @@ class InboundAgent(Agent):
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
 
-    async def hangup(self):
-        """Завершение вызова с защитой от повторных вызовов"""
+    async def _trigger_end_call(self):
+        """Инициирует завершение вызова с корректной синхронизацией"""
         if self.call_ended:
-            return  # Уже завершён
-        
+            logger.info("Вызов уже завершён, пропускаем дубликат")
+            return
+
+        logger.info(f"Начинаем завершение вызова для {self.participant.identity}")
         self.call_ended = True
-        job_ctx = get_job_context()
-        
+
         try:
-            await job_ctx.api.room.delete_room(
-                api.DeleteRoomRequest(room=job_ctx.room.name)
-            )
-            logger.info("Комната удалена, вызов завершён")
+            # Получаем контекст задания
+            job_ctx = get_job_context()
+            
+            # Удаляем комнату для завершения вызова
+            if job_ctx.room and hasattr(job_ctx.room, 'name'):
+                logger.info(f"Пытаюсь удалить комнату: {job_ctx.room.name}")
+                await job_ctx.api.room.delete_room(
+                    api.DeleteRoomRequest(room=job_ctx.room.name)
+                )
+                logger.info("Комната удалена, вызов завершён")
+            else:
+                logger.warning("Комната недоступна для удаления")
+                
         except Exception as e:
             logger.error(f"Ошибка при удалении комнаты: {e}")
+            
+            # Если удаление комнаты не удалось, пробуем альтернативные способы
+            try:
+                # Попробуем закрыть комнату через другие средства
+                if hasattr(job_ctx, 'close'):
+                    await job_ctx.close()
+                    
+            except Exception as e2:
+                logger.error(f"Ошибка при альтернативном завершении вызова: {e2}")
+                
+        finally:
+            logger.info(f"Завершение вызова для {self.participant.identity} завершено")
 
-    # Note: end_call_immediately will be defined in the entrypoint function where session is available
+    async def hangup(self):
+        """Завершение вызова с защитой от повторных вызовов"""
+        await self._trigger_end_call()
 
     @function_tool()
     async def transfer_call(self, ctx: RunContext, transfer_to: str):
@@ -188,20 +212,13 @@ class InboundAgent(Agent):
         """Вызывается, когда пользователь хочет завершить вызов."""
         logger.info(f"ending the call for {self.participant.identity}")
 
-        # Устанавливаем флаг завершения вызова
-        self.call_ended = True
-
-        # Останавливаем любые текущие и будущие попытки генерации речи
         try:
-            # Используем правильный способ ожидания воспроизведения речи
-            await ctx.wait_for_playout()
+            await ctx.wait_for_playout()  # Ждём завершения речи
         except Exception as e:
             logger.warning(f"Error waiting for speech playout: {e}")
 
-        # Небольшая задержка для обеспечения завершения всех процессов
-        await asyncio.sleep(0.5)
-
-        await self.hangup()
+        # Запускаем завершение
+        await self._trigger_end_call()
 
     def should_end_call(self, text: str) -> bool:
         """Проверяет, содержит ли текст фразы прощания, требующие завершения вызова"""
@@ -399,68 +416,47 @@ async def entrypoint(ctx: JobContext):
     agent.set_participant(participant)
 
     # Сразу говорим фразу приветствия
-    await session.say(f'<prosody rate="175%"> Здравствуйте {agent.client_name}, медицинский центр СМИТРА. Меня зовут Елена, слушаю вас? </prosody>')
+    await session.say(f'<prosody rate="175%"> Здравствуйте {agent.client_name}, медицинский центр СМИТРА. </prosody> <prosody rate="175%"> Меня зовут Елена, слушаю вас? </prosody>')
 
     # Добавляем обработчик для отслеживания генерации речи агентом
     @session.on("user_speech_committed")
     def _on_user_speech_committed(user_speech: rtc.SpeechData):
         logger.info(f"Пользователь сказал: {user_speech.text}")
+        
+        # Проверяем, сказал ли пользователь фразу прощания
+        if agent.should_end_call(user_speech.text):
+            logger.info("Пользователь сказал фразу прощания, инициируем завершение вызова")
+            # Запускаем завершение в контексте текущей сессии
+            asyncio.create_task(agent._trigger_end_call())
 
     # Добавляем обработчик для отслеживания генерации речи агентом
     @session.on("agent_speech_committed")
     def _on_agent_speech_committed(agent_speech: rtc.SpeechData):
         logger.info(f"Агент сказал: {agent_speech.text}")
         
-        if agent.call_ended:  # Уже завершаем вызов
+        if agent.call_ended:
+            logger.info("Вызов уже завершён, пропускаем обработку")
             return
         
         if agent.should_end_call(agent_speech.text):
-            logger.info("Обнаружена фраза прощания, инициируем завершение вызова")
-            # Немедленно запускаем завершение без дополнительных генераций
-            asyncio.create_task(end_call_immediately())
+            logger.info("Обнаружена фраза прощания в речи агента, инициируем завершение вызова")
+            # Запускаем завершение в контексте текущей сессии
+            # Используем отложенный вызов, чтобы дать возможность текущему аудио закончиться
+            async def delayed_end_call():
+                await asyncio.sleep(0.5)  # Даем время для завершения текущей фразы
+                await agent._trigger_end_call()
+            
+            asyncio.create_task(delayed_end_call())
 
-    async def end_call_immediately():
-        """Немедленное завершение вызова без дополнительных проверок"""
-        if agent.call_ended:
-            return
-        
-        agent.call_ended = True
-        logger.info(f"Немедленное завершение вызова для {agent.participant.identity}")
-        
-        try:
-            # Даём небольшую задержку для корректного завершения аудио
-            await asyncio.sleep(0.3)
-            
-            # Удаляем комнату
-            job_ctx = get_job_context()
-            await job_ctx.api.room.delete_room(
-                api.DeleteRoomRequest(room=job_ctx.room.name)
-            )
-            logger.info("Вызов успешно завершён")
-            
-        except Exception as e:
-            logger.error(f"Ошибка при завершении вызова: {e}")
 
 
     # Обработчик для случая, когда пользователь покидает комнату
     @session.on("participant_left")
     def _on_participant_left(participant: rtc.Participant):
-        logger.info(f"Участник {participant.identity} покинул комнату, завершаем вызов")
-        # Завершаем вызов, когда пользователь покидает комнату
-        asyncio.create_task(_cleanup_on_participant_leave())
+        logger.info(f"Участник {participant.identity} покинул комнату")
+        if not agent.call_ended:
+            asyncio.create_task(agent._trigger_end_call())
 
-    async def _cleanup_on_participant_leave():
-        """Очистка ресурсов и завершение вызова при выходе участника"""
-        try:
-            await asyncio.sleep(1)  # Небольшая задержка перед завершением
-            job_ctx = get_job_context()
-            await job_ctx.api.room.delete_room(
-                api.DeleteRoomRequest(
-                    room=job_ctx.room.name,
-                )
-            )
-        except Exception as e:
-            logger.error(f"Ошибка при очистке после ухода участника: {e}")
 
 
 if __name__ == "__main__":
