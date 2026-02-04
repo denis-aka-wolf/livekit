@@ -134,14 +134,22 @@ class InboundAgent(Agent):
         self.participant = participant
 
     async def hangup(self):
-        """Вспомогательная функция для завершения вызова путем удаления комнаты."""
-
+        """Завершение вызова с защитой от повторных вызовов"""
+        if self.call_ended:
+            return  # Уже завершён
+        
+        self.call_ended = True
         job_ctx = get_job_context()
-        await job_ctx.api.room.delete_room(
-            api.DeleteRoomRequest(
-                room=job_ctx.room.name,
+        
+        try:
+            await job_ctx.api.room.delete_room(
+                api.DeleteRoomRequest(room=job_ctx.room.name)
             )
-        )
+            logger.info("Комната удалена, вызов завершён")
+        except Exception as e:
+            logger.error(f"Ошибка при удалении комнаты: {e}")
+
+    # Note: end_call_immediately will be defined in the entrypoint function where session is available
 
     @function_tool()
     async def transfer_call(self, ctx: RunContext, transfer_to: str):
@@ -185,9 +193,8 @@ class InboundAgent(Agent):
 
         # Останавливаем любые текущие и будущие попытки генерации речи
         try:
-            current_speech = ctx.session.current_speech
-            if current_speech:
-                await current_speech.wait_for_playout()
+            # Используем правильный способ ожидания воспроизведения речи
+            await ctx.wait_for_playout()
         except Exception as e:
             logger.warning(f"Error waiting for speech playout: {e}")
 
@@ -201,14 +208,17 @@ class InboundAgent(Agent):
         import re
         text_lower = text.lower().strip()
         
-        # Убираем лишние знаки препинания и пробелы для более точного сопоставления
+        # Нормализация: удаляем знаки препинания, оставляем пробелы
         normalized_text = re.sub(r'[^\w\s]', ' ', text_lower)
-        normalized_text = ' '.join(normalized_text.split())  # убираем лишние пробелы
+        normalized_text = ' '.join(normalized_text.split())
         
-        # Проверяем, содержит ли текст одну из ключевых фраз прощания
+        # Проверяем наличие ключевых фраз В КОНЦЕ текста (чтобы избежать ложных срабатываний)
         for phrase in self.farewell_phrases:
             if phrase in normalized_text:
-                return True
+                # Дополнительно проверяем, что фраза находится ближе к концу сообщения
+                if normalized_text.endswith(phrase) or \
+                   len(normalized_text) - normalized_text.find(phrase) < len(phrase) + 5:
+                    return True
         return False
 
     @function_tool()
@@ -400,23 +410,37 @@ async def entrypoint(ctx: JobContext):
     @session.on("agent_speech_committed")
     def _on_agent_speech_committed(agent_speech: rtc.SpeechData):
         logger.info(f"Агент сказал: {agent_speech.text}")
-        # Проверяем, содержит ли речь агента фразы прощания
+        
+        if agent.call_ended:  # Уже завершаем вызов
+            return
+        
         if agent.should_end_call(agent_speech.text):
             logger.info("Обнаружена фраза прощания, инициируем завершение вызова")
-            # Запускаем завершение вызова в отдельной задаче, чтобы не блокировать обработку
-            asyncio.create_task(_auto_end_call())
+            # Немедленно запускаем завершение без дополнительных генераций
+            asyncio.create_task(end_call_immediately())
 
-    async def _auto_end_call():
-        """Автоматически завершает вызов через генерацию команды end_call"""
+    async def end_call_immediately():
+        """Немедленное завершение вызова без дополнительных проверок"""
+        if agent.call_ended:
+            return
+        
+        agent.call_ended = True
+        logger.info(f"Немедленное завершение вызова для {agent.participant.identity}")
+        
         try:
-            # Ждем немного, чтобы дать возможность завершить воспроизведение речи
-            await asyncio.sleep(0.5)
-            # Генерируем специальный ответ, который вызовет инструмент завершения вызова
-            await session.generate_reply(
-                instructions="Фраза прощания была сказана, теперь вызовите инструмент end_call для завершения вызова."
+            # Даём небольшую задержку для корректного завершения аудио
+            await asyncio.sleep(0.3)
+            
+            # Удаляем комнату
+            job_ctx = get_job_context()
+            await job_ctx.api.room.delete_room(
+                api.DeleteRoomRequest(room=job_ctx.room.name)
             )
+            logger.info("Вызов успешно завершён")
+            
         except Exception as e:
-            logger.error(f"Ошибка при автоматическом завершении вызова: {e}")
+            logger.error(f"Ошибка при завершении вызова: {e}")
+
 
     # Обработчик для случая, когда пользователь покидает комнату
     @session.on("participant_left")
@@ -444,6 +468,6 @@ if __name__ == "__main__":
         WorkerOptions(
             entrypoint_fnc=entrypoint,
             agent_name="elaina-inbound-mango",
-            job_memory_warn_mb=8000, 
+            job_memory_warn_mb=1500, 
         )
     )
