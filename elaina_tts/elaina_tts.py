@@ -65,6 +65,17 @@ class ElainaStream(tts.ChunkedStream):
 
     async def _run(self, output_emitter: "tts.AudioEmitter") -> None:
         """Реализация абстрактного метода _run"""
+        print(f"TTS: Начало синтеза речи для текста: '{self._input_text[:50]}...'")  # первые 50 символов для отладки
+        
+        # Инициализируем AudioEmitter перед использованием
+        output_emitter.initialize(
+            request_id="req_" + str(hash(self._input_text))[:8],  # генерируем уникальный ID запроса
+            sample_rate=self._tts._sample_rate,
+            num_channels=self._tts._num_channels,
+            mime_type="audio/pcm",
+            stream=False,
+        )
+        
         def _render():
             tensor = self._tts._model.apply_tts(
                 text=self._input_text,
@@ -77,14 +88,9 @@ class ElainaStream(tts.ChunkedStream):
         # Генерируем аудио в отдельном потоке
         pcm_bytes = await asyncio.to_thread(_render)
         
-        # Создаем аудиофрейм
-        audio_frame = rtc.AudioFrame(
-            data=pcm_bytes,
-            sample_rate=self._tts._sample_rate,
-            num_channels=self._tts._num_channels,
-            samples_per_channel=len(pcm_bytes) // 2  # Предполагаем 16-битный аудио
-        )
+        print(f"Синтезировано {len(pcm_bytes)} байт аудио")
 
         # Отправляем синтезированный аудио через emitter
         output_emitter.push(pcm_bytes)
         output_emitter.flush()  # Убедиться, что фрейм отправлен
+        print("Отправлен аудиофрейм")

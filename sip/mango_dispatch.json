@@ -1,16 +1,16 @@
 {
   "dispatch_rule": {
     "name": "mango-dispatch",
-    "trunk_ids": ["ST_hoVtmgNJvVFg"],
+    "trunk_ids": ["ST_t5PUKbKjJQqP"],
     "rule": {
-      "dispatch_rule_direct": {
-        "room_name": "elaina"
+      "dispatch_rule_individual": {
+        "room_prefix": "elaina-inbound-mango__"
       }
     },
     "room_config": {
       "agents": [
         {
-          "agent_name": "elaina"
+          "agent_name": "elaina-inbound-mango"
         }
       ]
     }

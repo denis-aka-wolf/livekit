@@ -61,13 +61,21 @@ services:
       - --port
       - "11434"
       - --hf-repo
-      - "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
+      - "unsloth/Qwen3-4B-Instruct-2507-GGUF" #- "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
+      - --hf-file
+      - "Qwen3-4B-Instruct-2507-IQ4_XS.gguf" # Явно просим легкую версию
       - --alias
       - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
       - --ctx-size
       - "${LLAMA_CTX_SIZE:-16384}"
       - --threads
-      - "16" 
+      - "8"  # Потому что команда lscpu выводит Core(s) per socket:   8
+      - --n-gpu-layers
+      - "0"  # Отключаем GPU для стабильности CPU-обработки
+      - --parallel
+      - "4"  # Количество параллельных запросов
+      - --mlock   # Чтобы модель не улетала в SWAP
+      - --log-disable  # Отключаем логирование для улучшения производительности
     volumes:
       - /srv/livekit/inference/llama/models:/models
     environment:

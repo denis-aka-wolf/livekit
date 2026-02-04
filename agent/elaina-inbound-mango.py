@@ -33,13 +33,11 @@ from livekit.plugins.turn_detector.multilingual import MultilingualModel
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from elaina_tts.elaina_tts import ElainaTTS
 
-logger = logging.getLogger("elaina-outbound-caller-worker")
+logger = logging.getLogger("elaina-inbound-worker")
 logger.setLevel(logging.INFO)
 
-OUTBOUND_TRUNK_ID = "ST_NdEHgspjNRwV"
-
 def load_env_file(env_path):
-    """Загрузка .env файла вручную для избежания проблем с символами возврата каретки"""
+    """Загрузка .env файла вручно для избежания проблем с символами возврата каретки"""
     if os.path.exists(env_path):
         with open(env_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -51,30 +49,21 @@ def load_env_file(env_path):
                         value = value.strip().rstrip('\r\n\t ')
                         os.environ[key] = value
 
-# Загружаем .env файл вручную для предотвращения проблем с символами возврата каретки
+# Загружаем .env файл вручно для предотвращения проблем с символами возврата каретки
 env_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
 load_env_file(env_path)
 
-#outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID")
-#outbound_trunk_id = os.getenv("SIP_OUTBOUND_TRUNK_ID", OUTBOUND_TRUNK_ID)
-outbound_trunk_id = OUTBOUND_TRUNK_ID
-logger.info(f"Используемый SIP trunk: {outbound_trunk_id!r}")
 
-
-class OutboundCaller(Agent):
-    def __init__(
-        self,
-        *,
-        name: str,
-        appointment_time: str,
-        dial_info: dict[str, Any],
-    ):
+class InboundAgent(Agent):
+    def __init__(self, *, phone_number: str = ""):
         super().__init__(
             instructions=f"""
-            Имя клиента: {name}. 
-            Его запись на прием: {appointment_time}.
+Номер телефона клиента: {phone_number}.
+Имя клиента: Иван
 
-            Ты — виртуальный агент Елена, 21 год, работаешь в стоматологической клинике «СтомаПлюс». Твоя единственная задача — подтверждать или переносить запись клиента на приём.
+Ты — виртуальный агент Елена, 21 год, работаешь медицинским регистратором в многопрофильной клинике СМИТРА. 
+
+Твоя задача — подтверждать или переносить запись клиента на приём.
 
 Правила работы:
 
@@ -91,15 +80,14 @@ class OutboundCaller(Agent):
 
 Сценарий диалога:
 
-Приветствие
-«Здравствуйте! Меня зовут Елена. Я помогаю с подтверждением записей в клинике „СтомаПлюс“. Назовите, пожалуйста, ваше имя.»
+Не здаровайся, сразу начинай диалог
 
 Получение имени и проверка записи
 Если запись найдена:
 «Василий, подтверждаю вашу запись на тридцатое января в девятьнадцать тридцать к врачу Иванову Ивану Ивановичу. Всё верно?»
 
 Если запись не найдена:
-«К сожалению, не удалось найти вашу запись. Пожалуйста, уточните дату и время приёма.»
+«К сожалуйста, уточните дату и время приёма.»
 
 Подтверждение или перенос
 Если клиент подтверждает:
@@ -119,7 +107,7 @@ class OutboundCaller(Agent):
 Ограничения:
 Не используй сленг, эмодзи или неформальные выражения.
 Не обсуждай медицинские вопросы.
-Если клиент настаивает на информации вне твоей компетенции, повторяй шаблон 
+Если клиент настаивает на информации вне твоей компетенции, повторяй шаблон
 Время разговора — не более 2 минут.
 Ответ должен быть не более 20-30 слов.
 Все цифры пиши текстом, не используй сокращения
@@ -136,7 +124,7 @@ class OutboundCaller(Agent):
         # keep reference to the participant for transfers
         self.participant: rtc.RemoteParticipant | None = None
 
-        self.dial_info = dial_info
+        self.phone_number = phone_number
 
     def set_participant(self, participant: rtc.RemoteParticipant):
         self.participant = participant
@@ -152,10 +140,9 @@ class OutboundCaller(Agent):
         )
 
     @function_tool()
-    async def transfer_call(self, ctx: RunContext):
+    async def transfer_call(self, ctx: RunContext, transfer_to: str):
         """Перевести звонок оператору, после подтверждения пользователя."""
 
-        transfer_to = self.dial_info["transfer_to"]
         if not transfer_to:
             return "cannot transfer call"
 
@@ -247,19 +234,22 @@ async def entrypoint(ctx: JobContext):
     logger.info(f"connecting to room {ctx.room.name}")
     await ctx.connect()
 
-    # При отправке вызова агенту мы передадим ему необходимую информацию для набора номера пользователя.
-    # dial_info — это словарь со следующими ключами:
-    # - phone_number: номер телефона для набора
-    # - transfer_to: номер телефона, на который будет переадресован звонок по запросу
-    dial_info = json.loads(ctx.job.metadata)
-    participant_identity = phone_number = dial_info["phone_number"]
+    # Для входящего вызова получаем информацию о SIP-участнике из метаданных
+    sip_data = {}
+    if ctx.job.metadata:
+        try:
+            sip_data = json.loads(ctx.job.metadata)
+            logger.info(f"SIP metadata received: {sip_data}")
+        except json.JSONDecodeError:
+            logger.warning("Could not decode job metadata as JSON")
+    
+    # Получаем номер телефона из SIP-информации
+    # Пытаемся получить номер из разных возможных полей
+    phone_number = sip_data.get("sip_from_user") or sip_data.get("from_user") or sip_data.get("to_user", "unknown")
+    logger.info(f"Phone number determined: {phone_number}")
 
-    # Найти номер телефона пользователя и информацию о встрече
-    agent = OutboundCaller(
-        name="Денис",
-        appointment_time="Следующий вторник 3 февраля к врачу Иванову Ивану Ивановичу",
-        dial_info=dial_info,
-    )
+    # Создаем агента с информацией о звонящем
+    agent = InboundAgent(phone_number=phone_number)
 
     llama_model = os.getenv("LLAMA_MODEL", "qwen3-4b")
     llama_base_url = os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
@@ -294,52 +284,25 @@ async def entrypoint(ctx: JobContext):
         ),
     )
 
-    # Начинаем сессию перед набором номера, чтобы гарантировать, что когда пользователь ответит,
-    # агент не пропустит ничего из того, что скажет пользователь.
-    session_started = asyncio.create_task(
-        session.start(
-            agent=agent,
-            room=ctx.room
-        )
-    )
+    # Начинаем сессию агента
+    await session.start(agent=agent, room=ctx.room)
 
-    # `create_sip_participant` начинает набор номера пользователя
-    try:
-        await ctx.api.sip.create_sip_participant(
-            api.CreateSIPParticipantRequest(
-                room_name=ctx.room.name,
-                sip_trunk_id=outbound_trunk_id,
-                sip_call_to=phone_number,
-                participant_identity=participant_identity,
-                # Функция блокируется до тех пор, пока пользователь не ответит на звонок или если звонок не удастся.
-                wait_until_answered=True,
-            )
-        )
+    # Ждем подключения участника (SIP-участник будет автоматически добавлен при входящем вызове)
+    participant = await ctx.wait_for_participant()  # Ожидаем первого участника
+    logger.info(f"participant joined: {participant.identity}")
 
-        # Ждем пока клиент присоединится к комнате
-        await session_started
-        participant = await ctx.wait_for_participant(identity=participant_identity)
-        logger.info(f"participant joined: {participant.identity}")
+    # Устанавливаем участника в агенте
+    agent.set_participant(participant)
 
-        # Сразу говорим фразу
-        await session.say("Здравствуйте, меня зовут Елена. Чем могу быть полезна?")
-
-        agent.set_participant(participant)
-
-    except api.TwirpError as e:
-        logger.error(
-            f"error creating SIP participant: {e.message}, "
-            f"SIP status: {e.metadata.get('sip_status_code')} "
-            f"{e.metadata.get('sip_status')}"
-        )
-        ctx.shutdown()
+    # Сразу говорим фразу приветствия
+    await session.say('<prosody rate="fast"> Здравствуйте Иван, медицинский центр СМИТРА. Меня зовут Елена, слушаю вас? </prosody>')
 
 
 if __name__ == "__main__":
     cli.run_app(
         WorkerOptions(
             entrypoint_fnc=entrypoint,
-            agent_name="elaina-outbound-mango",
+            agent_name="elaina-inbound-mango",
             job_memory_warn_mb=8000, 
         )
     )
