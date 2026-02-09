@@ -314,11 +314,6 @@ async def entrypoint(ctx: JobContext):
     # Создаем агента с информацией о звонящем
     agent = InboundAgent(phone_number=phone_number)
 
-    llama_model = os.getenv("LLAMA_MODEL", "qwen3-4b")
-    llama_base_url = os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
-    #aidar, baya, kseniya, xenia, eugene
-    elaina_tts = ElainaTTS(speaker="baya", sample_rate=48000, num_channels=1)
-
     # Пайплайн
     session = AgentSession(
         #turn_detection=MultilingualModel(), # Отвечает за интеллектуальное определение конца фразы
@@ -338,13 +333,23 @@ async def entrypoint(ctx: JobContext):
             api_key="no-key-needed",
             language="ru",
         ),
-        tts=elaina_tts,
+        #aidar, baya, kseniya, xenia, eugene
+        tts=ElainaTTS(speaker="baya", sample_rate=48000, num_channels=1),
         llm=openai.LLM(
-            base_url=llama_base_url,
-            model=llama_model,
+            base_url=os.getenv("LLAMA_BASE_URL", "http://127.0.0.1:11434/v1"),
+            model=os.getenv("LLAMA_MODEL", "qwen3-4b"),
             api_key="no-key-needed",
-            timeout=5.0,  # Увеличенный таймаут для генерации ответа
-            max_retries=3,  # Количество попыток при ошибках
+            timeout=30.0,          # Увеличиваем таймаут для локальной модели
+            extra_body={
+                "options": {
+                    "num_thread": 8,      # Используем все 8 ядер из Docker
+                    "num_predict": 80,    # Короткие фразы быстрее озвучиваются
+                    "top_k": 20,          # Сужаем выбор токенов
+                    "temperature": 0.7,   # Стандарт для диалога
+                    "num_ctx": 2048,      # Фиксируем контекст для стабильности кэша
+                    "use_mmap": True      # Быстрое чтение из RAM
+                }
+            }
         ),
     )
 
@@ -375,9 +380,10 @@ async def entrypoint(ctx: JobContext):
         logger.info("🔥 Начинаю реальный прогрев LLM...")
         # Запускаем чат
         chat_stream = session.llm.chat(
-            history=[ChatMessage(role="system", content=warmup_prompt),
-                     ChatMessage(role="user", content="Привет")], # Добавляем имитацию юзера
-            temperature=0.7
+            messages=[ChatMessage(role="system", content=[{"type": "text", "text": warmup_prompt}]),
+                     ChatMessage(role="user", content=[{"type": "text", "text": "Привет"}])], # Добавляем имитацию юзера
+            temperature=0.7,
+            timeout=30.0
         )
         # ВАЖНО: нужно прочитать хотя бы один фрагмент из потока, 
         # чтобы llama_cpp начала вычисления

@@ -50,48 +50,44 @@ services:
     volumes:
       - /srv/livekit/logs:/var/log/livekit
 
-
   llama_cpp:
     image: ghcr.io/ggml-org/llama.cpp:server
     container_name: llama_cpp
     network_mode: host
-    #restart: unless-stopped
-    restart: "no"  # Отключаем рестарт, чтобы увидеть ошибку, если она будет
+    restart: unless-stopped
     command:
       - --host
       - 0.0.0.0
       - --port
       - "11434"
       - --hf-repo
-      - "${LLAMA_HF_REPO:-Qwen/Qwen2.5-1.5B-Instruct-GGUF}" #- "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
+      - "unsloth/Qwen3-4B-Instruct-2507-GGUF" #- "${LLAMA_HF_REPO:-unsloth/Qwen3-4B-Instruct-2507-GGUF}"
       - --hf-file
-      - ${LLAMA_HF_FILE:-qwen2.5-1.5b-instruct-q4_k_m.gguf} # Явно просим легкую версию
+      - "Qwen3-4B-Instruct-2507-Q4_K_M.gguf" # Явно просим легкую версию
       - --alias
-      - "${LLAMA_MODEL_ALIAS:-qwen1-5b}"
+      - "${LLAMA_MODEL_ALIAS:-qwen3-4b}"
       - --ctx-size
       - "4096" #"${LLAMA_CTX_SIZE:-16384}"
       - --threads
-      - "16"  # Потому что команда lscpu выводит Core(s) per socket:   8
+      - "8"  # Потому что команда lscpu выводит Core(s) per socket:   8
       - --n-gpu-layers
       - "0"  # Отключаем GPU для стабильности CPU-обработки
-      #- --flash-attn 
-      #- "on"
       - --parallel
       - "1" # Количество параллельных запросов
       - --batch-size
-      - "256"
+      - "512" 
       - --mlock   # Чтобы модель не улетала в SWAP
-      #- --log-disable  # Отключаем логирование для улучшения производительности
+      - --log-disable  # Отключаем логирование для улучшения производительности
     volumes:
       - /srv/livekit/inference/llama/models:/models
     environment:
       - XDG_CACHE_HOME=/models
       - HF_HOME=/models
-#    healthcheck:
-#      test: ["CMD-SHELL", "curl -fsS http://localhost:11434/v1/models > /dev/null"]
-#      interval: 10s
-#      timeout: 5s
-#      retries: 30
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:11434/v1/models > /dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
 
   kokoro:
     image: ghcr.io/remsky/kokoro-fastapi-cpu:latest
@@ -105,7 +101,7 @@ services:
       context: ./inference/whisper
     container_name: whisper
     environment:
-      - VOXBOX_HF_REPO_ID=Systran/faster-whisper-small 
+      - VOXBOX_HF_REPO_ID=Systran/faster-whisper-tiny
       - VOXBOX_DEVICE=cpu
       - VOXBOX_COMPUTE_TYPE=int8
       - OMP_NUM_THREADS=8

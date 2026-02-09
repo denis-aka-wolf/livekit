@@ -32,8 +32,12 @@ from modules.sip_data_handler import process_sip_call_data
 # Инициализируем окружение до создания WorkerOptions
 initialize_environment()
 
+# Логируем значения конфигурации для отладки
 logger = logging.getLogger("elaina-inbound-worker")
 logger.setLevel(logging.INFO)
+logger.info(f"LIVEKIT_URL из окружения: {get_config_value('LIVEKIT_URL')}")
+logger.info(f"LIVEKIT_API_KEY из окружения: {get_config_value('LIVEKIT_API_KEY')}")
+logger.info(f"LIVEKIT_API_SECRET из окружения: {get_config_value('LIVEKIT_API_SECRET')}")
 
 
 async def entrypoint(ctx: JobContext):

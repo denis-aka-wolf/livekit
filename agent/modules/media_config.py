@@ -98,8 +98,8 @@ async def warmup_llm(llm, phone_number: str, client_name: str):
         logger.info("🔥 Начинаю реальный прогрев LLM...")
         # Запускаем чат
         chat_stream = llm.chat(
-            history=[ChatMessage(role="system", content=warmup_prompt),
-                     ChatMessage(role="user", content="Привет")], # Добавляем имитацию юзера
+            history=[ChatMessage(role="system", content=[{"type": "text", "text": warmup_prompt}]),
+                     ChatMessage(role="user", content=[{"type": "text", "text": "Привет"}])], # Добавляем имитацию юзера
             temperature=0.7
         )
         # ВАЖНО: нужно прочитать хотя бы один фрагмент из потока, 
