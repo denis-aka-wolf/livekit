@@ -28,12 +28,29 @@ def setup_vad(config: Dict[str, Any]):
 
 def setup_stt(config: Dict[str, Any]):
     """Настройка Speech-to-Text"""
-    return openai.STT(
-        base_url=config["base_url"],
-        model=config["model"],
-        api_key=config["api_key"],
-        language=config["language"],
-    )
+    # Получаем URL и проверяем, является ли он локальным
+    base_url = config.get("base_url", "")
+    logger.info(f"Setting up STT with config: base_url={base_url}, model={config.get('model')}")
+    
+    # Для локальных сервисов используем специфические настройки, как в оригинальном рабочем коде
+    if base_url and ("localhost" in base_url or "127.0.0.1" in base_url or "0.0.0.0" in base_url):
+        logger.info(f"Using local STT service: {base_url}")
+        # Для локальных STT сервисов (например, whisper-asr-server) с правильными параметрами
+        return openai.STT(
+            base_url=config["base_url"],
+            model=config.get("model", "Systran/faster-whisper-small"),  # Используем значение из конфига, а не getenv напрямую
+            api_key=config.get("api_key", "no-key-needed"),  # Используем стандартный ключ для локальных сервисов
+            language=config.get("language", "ru"),
+        )
+    else:
+        logger.info(f"Using external STT service: {base_url}")
+        # Если это внешний API OpenAI
+        return openai.STT(
+            base_url=config["base_url"],
+            model=config["model"],
+            api_key=config["api_key"],
+            language=config["language"],
+        )
 
 
 def setup_tts(config: Dict[str, Any]):
@@ -47,13 +64,32 @@ def setup_tts(config: Dict[str, Any]):
 
 def setup_llm(config: Dict[str, Any]):
     """Настройка Large Language Model"""
-    return openai.LLM(
-        base_url=config["base_url"],
-        model=config["model"],
-        api_key=config["api_key"],
-        timeout=config["timeout"],
-        max_retries=config["max_retries"],
-    )
+    from livekit.plugins.openai import LLM
+    
+    # Проверяем, является ли URL локальным, и используем соответствующие настройки
+    base_url = config.get("base_url", "")
+    logger.info(f"Setting up LLM with config: base_url={base_url}, model={config.get('model')}")
+    
+    if base_url and ("localhost" in base_url or "127.0.0.1" in base_url or "0.0.0.0" in base_url):
+        logger.info(f"Using local LLM service: {base_url}")
+        # Для локальных LLM (например, Ollama, llama.cpp) с параметрами из оригинального рабочего кода
+        return LLM(
+            base_url=config["base_url"],
+            model=config["model"],
+            api_key=config.get("api_key", "no-key-needed"),
+            timeout=config.get("timeout", 30.0),  # Используем увеличенный таймаут для локальной модели
+            max_retries=config["max_retries"],
+        )
+    else:
+        logger.info(f"Using external LLM service: {base_url}")
+        # Для внешнего OpenAI API
+        return LLM(
+            base_url=config["base_url"],
+            model=config["model"],
+            api_key=config["api_key"],
+            timeout=config["timeout"],
+            max_retries=config["max_retries"],
+        )
 
 
 def setup_session_config(session_config: Dict[str, Any], stt, tts, llm, vad):
