@@ -69,7 +69,7 @@ services:
       - --alias
       - "${LLAMA_MODEL_ALIAS:-qwen1-5b}"
       - --ctx-size
-      - "4096" #"${LLAMA_CTX_SIZE:-16384}"
+      - "32768" #"${LLAMA_CTX_SIZE:-16384}"
       - --threads
       - "16"  # Потому что команда lscpu выводит Core(s) per socket:   8
       - --n-gpu-layers

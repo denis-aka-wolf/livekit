@@ -378,23 +378,34 @@ async def entrypoint(ctx: JobContext):
         prompt_template = agent._load_prompt_template()
         warmup_prompt = prompt_template.format(phone_number=phone_number, client_name=agent.client_name)
         logger.info("🔥 Начинаю реальный прогрев LLM...")
-        # Запускаем чат
+
+
+        # Формируем сообщения с корректным форматом content
+        messages = [
+            ChatMessage(
+                role="system",
+                content=warmup_prompt  # Просто строка для system-сообщения
+            ),
+            ChatMessage(
+                role="user",
+                content="Привет"  # Просто строка для user-сообщения
+            )
+        ]
+
         chat_stream = session.llm.chat(
-            messages=[ChatMessage(role="system", content=[{"type": "text", "text": warmup_prompt}]),
-                     ChatMessage(role="user", content=[{"type": "text", "text": "Привет"}])], # Добавляем имитацию юзера
+            messages=messages,
             temperature=0.7,
             timeout=30.0
         )
-        # ВАЖНО: нужно прочитать хотя бы один фрагмент из потока, 
-        # чтобы llama_cpp начала вычисления
+
+        # Читаем первый чанк из потока, чтобы инициировать вычисления
         async for chunk in chat_stream:
-            # Нам не нужен текст, нам нужен сам факт обработки
-            break 
+            break
+
         logger.info("✅ Prompt warmup completed (кэш создан)")
     except Exception as e:
         logger.warning(f"Prompt warmup failed: {e}")
 
-    
     # Начинаем сессию агента
     await session.start(agent=agent, room=ctx.room)
 
